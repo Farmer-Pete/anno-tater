@@ -3,7 +3,8 @@
 //
 //   pages/<name>.json      one notes file per page
 //   inbox/<owner>.jsonl    messages from the page, one JSON object per line
-//   delivered.json         ids of messages an agent has picked up (drives "Claude has it")
+//   delivered.jsonl        ids of messages an agent has picked up (drives "Claude has it"), one per line.
+//                          Append-only, so several `tater watch` processes can't overwrite each other.
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -14,7 +15,8 @@ export const dataDir = () =>
   process.env.ANNO_TATER_HOME ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'anno-tater');
 export const pagesDir = () => join(dataDir(), 'pages');
 export const inboxDir = () => join(dataDir(), 'inbox');
-const deliveredFile = () => join(dataDir(), 'delivered.json');
+export const DELIVERED = 'delivered.jsonl';
+const deliveredFile = () => join(dataDir(), DELIVERED);
 
 const safeName = (s: string) => s.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'x';
 
@@ -25,10 +27,15 @@ function writeAtomic(path: string, text: string): void {
   renameSync(tmp, path);
 }
 
+const shortHash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 8);
+
 export function pageFile(match: string): string {
-  const hash = createHash('sha256').update(match).digest('hex').slice(0, 8);
-  return join(pagesDir(), `${safeName(match)}-${hash}.json`);
+  return join(pagesDir(), `${safeName(match)}-${shortHash(match)}.json`);
 }
+
+// The inbox for a notes file that names no owner: unique per page, so two agents working on
+// different pages never read each other's messages.
+export const defaultOwner = (match: string) => `page-${shortHash(match)}`;
 
 export function savePage(notes: NotesFile): string {
   mkdirSync(pagesDir(), { recursive: true });
@@ -70,15 +77,12 @@ export function readInbox(owner: string): Outgoing[] {
 }
 
 export function readDelivered(): Set<string> {
-  try {
-    return new Set(JSON.parse(readFileSync(deliveredFile(), 'utf8')) as string[]);
-  } catch {
-    return new Set();
-  }
+  if (!existsSync(deliveredFile())) return new Set();
+  return new Set(readFileSync(deliveredFile(), 'utf8').split('\n').filter(Boolean));
 }
 
 export function markDelivered(ids: string[]): void {
   if (!ids.length) return;
   mkdirSync(dataDir(), { recursive: true });
-  writeAtomic(deliveredFile(), JSON.stringify([...new Set([...readDelivered(), ...ids])]));
+  appendFileSync(deliveredFile(), `${ids.join('\n')}\n`);
 }

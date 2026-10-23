@@ -27,4 +27,18 @@ for (const browser of ['chrome', 'firefox'] as const) {
   cpSync(join('src', 'extension', 'static'), out, { recursive: true });
   cpSync('icons', join(out, 'icons'), { recursive: true });
 }
-console.log('built dist/chrome and dist/firefox');
+// The agent side for the skill: tater and the helper as plain JavaScript that runs on Node 20+,
+// so installing the skill needs no clone and no Node 26.
+await build({
+  entryPoints: { tater: 'src/cli/tater.ts', host: 'src/host/main.ts' },
+  outdir: join('skill', 'bin'),
+  outExtension: { '.js': '.mjs' },
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node20',
+  banner: { js: '#!/usr/bin/env node' },
+  legalComments: 'none',
+  logLevel: 'warning',
+});
+console.log('built dist/chrome, dist/firefox, and skill/bin');

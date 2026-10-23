@@ -2,8 +2,6 @@
 import { ext, type PopupState, type Request } from './compat.ts';
 
 const root = document.getElementById('root') ?? document.body;
-// Only Firefox and its forks have getBrowserInfo.
-const isGecko = () => 'getBrowserInfo' in ext.runtime;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -81,11 +79,6 @@ async function render(): Promise<void> {
     ? [el('p', 'Two-way: your replies reach Claude.')]
     : [el('p', 'One-way: Claude can show notes, but replies need the helper. From the anno-tater folder, run:'), command('npm run tater -- install'), el('p', 'Then reopen this popup.', 'muted')];
   if (state.helper !== 'connected' && state.helperError) helper.push(el('p', `Helper error: ${state.helperError}`, 'muted'));
-  // Only no-helper mode needs the address; with the helper, `tater open` goes straight to the page.
-  if (isGecko() && state.helper !== 'connected') {
-    // Zen reports itself as Firefox, so Firefox-family browsers share one setting.
-    helper.push(el('p', 'So `tater open` can reach this browser, run once:', 'muted'), command(`npm run tater -- config firefox-base ${ext.runtime.getURL('').replace(/\/$/, '')}`));
-  }
   root.append(section('Helper', ...helper));
 }
 

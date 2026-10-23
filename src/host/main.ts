@@ -1,12 +1,10 @@
 // The native messaging host. The browser starts it with the extension's id as an argument and
 // talks to it over stdin/stdout. Anything written to stdout must be a framed message, so logs go to stderr.
-import { mkdirSync, readFileSync, statSync, watch } from 'node:fs';
+import { mkdirSync, statSync, watch } from 'node:fs';
 import { DEFAULT_OWNER, type NotesFile } from '../shared/notes.ts';
 import type { FromHost, PageSummary, ToHost } from '../shared/protocol.ts';
 import { decoder, encode } from './framing.ts';
-import { appendInbox, dataDir, findPage, loadPages, pageFile, pagesDir, readDelivered } from './store.ts';
-
-const version = (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+import { appendInbox, dataDir, DELIVERED, findPage, loadPages, pageFile, pagesDir, readDelivered } from './store.ts';
 
 const send = (message: FromHost) => process.stdout.write(encode(message));
 const log = (...args: unknown[]) => console.error('[anno-tater host]', ...args);
@@ -40,14 +38,15 @@ function debounced(fn: () => void, ms = 150): () => void {
 mkdirSync(pagesDir(), { recursive: true });
 watch(pagesDir(), debounced(() => send({ type: 'pages', pages: pages() })));
 let lastDelivered = readDelivered();
-watch(dataDir(), debounced(() => {
+watch(dataDir(), (_event, file) => { if (file === DELIVERED) onDelivered(); });
+const onDelivered = debounced(() => {
   const now = readDelivered();
   const fresh = [...now].filter(id => !lastDelivered.has(id));
   lastDelivered = now;
   if (fresh.length) send({ type: 'delivered', ids: fresh });
-}));
+});
 
 process.stdin.on('data', decoder(handle));
 process.stdin.on('end', () => process.exit(0));
-send({ type: 'hello', version, pages: pages(), delivered: [...lastDelivered].slice(-500) });
+send({ type: 'hello', pages: pages(), delivered: [...lastDelivered].slice(-500) });
 log(`started for ${process.argv.slice(2).join(' ')}; data in ${dataDir()}`);

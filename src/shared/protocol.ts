@@ -20,7 +20,7 @@ export type ToHost =
   | { type: 'send'; message: Outgoing };
 
 export type FromHost =
-  | { type: 'hello'; version: string; pages: PageSummary[]; delivered: string[] }
+  | { type: 'hello'; pages: PageSummary[]; delivered: string[] }
   | { type: 'pages'; pages: PageSummary[] }
   | { type: 'notes'; match: string; notes: NotesFile | null }
   | { type: 'sent'; id: string }

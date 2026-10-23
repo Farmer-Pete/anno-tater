@@ -1,18 +1,16 @@
 // tater: the agent's side of Anno Tater.
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, watch } from 'node:fs';
-import { platform } from 'node:os';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, watch } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { DEFAULT_OWNER, encodeFragment, parseNotes, type Note, type NotesFile, type Outgoing } from '../shared/notes.ts';
+import { encodeFragment, parseNotes, type Note, type NotesFile, type Outgoing } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
-import { BROWSERS, cliPath, detected, install, installed, uninstall, type Browser } from '../host/install.ts';
-import { dataDir, findPage, inboxDir, loadPages, markDelivered, readDelivered, readInbox, savePage } from '../host/store.ts';
+import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
+import { cliPath, install, installed, uninstall } from '../host/install.ts';
+import { dataDir, defaultOwner, findPage, inboxDir, loadPages, markDelivered, readDelivered, readInbox, savePage } from '../host/store.ts';
 
 const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
   tater push <notes.json> [--owner NAME]    Store notes; pages open in a browser with the helper update live
-  tater open <notes.json> [--browser B]     Store notes and open the page (no helper needed)
+  tater open <notes.json> [--browser B]     Store notes and open the page in your default browser (no helper needed)
   tater watch [--owner NAME] [--once]       Print new messages from the page, one JSON line each
   tater reply <message-id> <text|->         Answer a message in its thread ("-" reads the text from stdin)
   tater ack <message-id>...                 Mark messages handled without answering
@@ -20,27 +18,18 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater status                              Pages, helper install state, and waiting messages
   tater install [--browser B]               Register the helper with your browsers (needed for replies)
   tater uninstall [--browser B]
-  tater config firefox-base <moz-extension://...>   The extension's address in Firefox or Zen (its popup shows the command)
 
-  B is chrome, firefox, or zen (install: every browser found; open: chrome). Data lives in ${dataDir()}.`;
+  B is chrome, firefox, or zen (install: every browser found; open: the default browser).
+  Data lives in ${dataDir()}.`;
 
 const fail = (message: string): never => { console.error(message); process.exit(1); };
 const readNotes = (file: string) => {
   try { return parseNotes(readFileSync(file, 'utf8')); } catch (e) { return fail(`${file}: ${(e as Error).message}`); }
 };
-const isBrowser = (b: string): b is Browser => (BROWSERS as readonly string[]).includes(b);
 const browsers = (b: string | undefined, all: Browser[]): Browser[] =>
   b === undefined ? all : isBrowser(b) ? [b] : fail(`unknown browser: ${b} (use ${BROWSERS.join(', ')})`);
-const APPS: Record<Browser, string> = { chrome: 'Google Chrome', firefox: 'Firefox', zen: 'Zen' };
-const BINARIES: Record<Browser, string> = { chrome: 'google-chrome', firefox: 'firefox', zen: 'zen' };
-
-// ---------- config ----------
-const configFile = () => join(dataDir(), 'config.json');
-const readConfig = (): Record<string, string> => { try { return JSON.parse(readFileSync(configFile(), 'utf8')); } catch { return {}; } };
-function writeConfig(key: string, value: string): void {
-  mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(configFile(), JSON.stringify({ ...readConfig(), [key]: value }, null, 2));
-}
+const targetBrowser = (b: string | undefined): Browser =>
+  browsers(b, [])[0] ?? defaultBrowser() ?? fail(`your default browser isn't one Anno Tater supports; pass --browser ${BROWSERS.join('|')}`);
 
 // ---------- messages ----------
 const ackedIds = () => new Set(loadPages().flatMap(p => p.acked ?? []));
@@ -105,23 +94,31 @@ function watchInbox(owner: string | undefined, once: boolean): void {
 }
 
 // ---------- opening pages ----------
-function openUrl(url: string, browser: Browser): void {
-  if (platform() === 'darwin') execFileSync('open', ['-a', readConfig()[`${browser}-app`] ?? APPS[browser], url]);
-  else execFileSync(BINARIES[browser], [url]);
-}
-
+// With the helper, the browser fetches the notes itself, so tater just opens the page. Without
+// it, the notes ride in the fragment of the extension's intake page.
 async function openPage(notes: NotesFile, browser: Browser): Promise<string> {
   const target = notes.url ?? fail('open needs a "url" in the notes file');
   if (installed(browser)) {
-    openUrl(target, browser);
-    return `opened ${target}; the helper delivers the notes`;
+    openIn(browser, target);
+    return `opened ${target} in ${browserName(browser)}; the helper delivers the notes`;
   }
   const base = browser === 'chrome'
     ? `chrome-extension://${CHROME_ID}`
-    : readConfig()['firefox-base'] ?? fail(`${APPS[browser]} needs its extension address once: open the Anno Tater popup there and run the command it shows`);
-  const url = `${base}/open.html#${await encodeFragment(notes, target)}`;
-  openUrl(url, browser);
-  return `opened ${target} through the extension (one-way: install the helper for replies)`;
+    : geckoBase(browser) ?? fail(`can't find Anno Tater in ${browserName(browser)}; install the extension there first`);
+  openIn(browser, `${base}/open.html#${await encodeFragment(notes, target)}`);
+  return `opened ${target} in ${browserName(browser)} through the extension (one-way: run tater install for replies)`;
+}
+
+// Validates and saves a notes file, giving it an owner, and says where replies will arrive.
+function store(file: string, owner: string | undefined): NotesFile {
+  const notes = readNotes(file);
+  const before = findPage(notes.match);
+  notes.owner = owner ?? notes.owner ?? before?.owner ?? defaultOwner(notes.match);
+  if (before?.owner && before.owner !== notes.owner) console.log(`warning: replacing notes for this page that belonged to owner ${before.owner}`);
+  notes.acked = [...new Set([...(before?.acked ?? []), ...(notes.acked ?? [])])]; // keep handled messages handled
+  console.log(`saved ${savePage(notes)}`);
+  console.log(`replies: tater watch --owner ${notes.owner}`);
+  return notes;
 }
 
 // ---------- main ----------
@@ -132,19 +129,12 @@ const { values, positionals } = parseArgs({
 const [command, ...args] = positionals;
 
 switch (values.help ? 'help' : command) {
-  case 'push': {
-    const notes = readNotes(args[0] ?? fail('push needs a notes file'));
-    if (values.owner) notes.owner = values.owner;
-    notes.owner ??= DEFAULT_OWNER;
-    console.log(`saved ${savePage(notes)}`);
+  case 'push':
+    store(args[0] ?? fail('push needs a notes file'), values.owner);
     break;
-  }
   case 'open': {
-    const notes = readNotes(args[0] ?? fail('open needs a notes file'));
-    if (values.owner) notes.owner = values.owner;
-    notes.owner ??= DEFAULT_OWNER;
-    savePage(notes);
-    console.log(await openPage(notes, browsers(values.browser, ['chrome'])[0] ?? 'chrome'));
+    const notes = store(args[0] ?? fail('open needs a notes file'), values.owner);
+    console.log(await openPage(notes, targetBrowser(values.browser)));
     break;
   }
   case 'check': {
@@ -169,8 +159,9 @@ switch (values.help ? 'help' : command) {
   case 'status': {
     const acked = ackedIds(), delivered = readDelivered();
     console.log(`data: ${dataDir()}`);
+    console.log(`default browser: ${defaultBrowser() ?? 'not supported'}`);
     console.log(`helper: ${BROWSERS.map(b => `${b} ${installed(b) ? 'installed' : 'not installed'}`).join(', ')}`);
-    for (const p of loadPages((f, why) => console.log(`  invalid ${f}: ${why}`))) console.log(`page: ${p.match} (${p.notes.length} notes, owner ${p.owner ?? DEFAULT_OWNER})`);
+    for (const p of loadPages((f, why) => console.log(`  invalid ${f}: ${why}`))) console.log(`page: ${p.match} (${p.notes.length} notes, owner ${p.owner ?? defaultOwner(p.match)})`);
     for (const o of owners()) {
       const waiting = readInbox(o).filter(m => !acked.has(m.id));
       if (waiting.length) console.log(`inbox ${o}: ${waiting.length} waiting (${waiting.filter(m => !delivered.has(m.id)).length} not yet picked up)`);
@@ -185,13 +176,6 @@ switch (values.help ? 'help' : command) {
   case 'uninstall':
     for (const f of uninstall(browsers(values.browser, [...BROWSERS]))) console.log(`removed ${f}`);
     break;
-  case 'config': {
-    const [key = '', value = ''] = args;
-    if (key !== 'firefox-base' || !value.startsWith('moz-extension://')) fail('usage: tater config firefox-base moz-extension://<id>  (Firefox and Zen share it)');
-    writeConfig(key, value.replace(/\/+$/, ''));
-    console.log('saved');
-    break;
-  }
   default:
     console.log(USAGE);
     if (command && command !== 'help') process.exit(1);

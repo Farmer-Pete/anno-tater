@@ -107,3 +107,24 @@ function pageFileIn(dir: string, match: string): string {
   process.env.ANNO_TATER_HOME = dir;
   try { return pageFile(match); } finally { process.env.ANNO_TATER_HOME = before; }
 }
+
+test('tater finds the extension address Firefox and Zen store in prefs.js', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'anno-tater-home-'));
+  const zen = join(fakeHome, 'Library/Application Support/zen');
+  mkdirSync(join(zen, 'Profiles', 'abc.Default'), { recursive: true });
+  writeFileSync(join(zen, 'installs.ini'), '[X]\nDefault=Profiles/abc.Default\n');
+  const uuids = JSON.stringify(JSON.stringify({ 'other@x': '1', 'anno-tater@farmerpete': 'uuid-123' }));
+  writeFileSync(join(zen, 'Profiles', 'abc.Default', 'prefs.js'), `user_pref("extensions.webextensions.uuids", ${uuids});\n`);
+  const script = "import('./src/host/browsers.ts').then(m => console.log(m.geckoBase('zen'), m.geckoBase('firefox')))";
+  const out = execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', '-e', script], { env: { ...process.env, HOME: fakeHome }, encoding: 'utf8' });
+  assert.equal(out.trim(), 'moz-extension://uuid-123 null');
+});
+
+test('each page gets its own inbox unless the notes name an owner', () => {
+  const dir = home();
+  const file = join(dir, 'notes.json');
+  writeFileSync(file, JSON.stringify({ ...notes, owner: undefined }));
+  assert.match(tater(dir, 'push', file), /replies: tater watch --owner page-[0-9a-f]{8}/);
+  writeFileSync(file, JSON.stringify({ ...notes, owner: 'someone-else' }));
+  assert.match(tater(dir, 'push', file), /warning: replacing notes for this page that belonged to owner page-/);
+});

@@ -1,8 +1,0 @@
-{
-  "name": "anno-tater",
-  "description": "Teaches Claude to write Anno Tater notes files, show them in your browser, and answer your replies.",
-  "version": "0.1.0",
-  "author": { "name": "Farmer-Pete" },
-  "repository": "https://github.com/Farmer-Pete/anno-tater",
-  "license": "MIT"
-}

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { decodeFragment, encodeFragment, findQuote, norm, originPattern, parseNotes, pickNotes, validate, type NotesFile } from '../src/shared/notes.ts';
 
@@ -76,9 +77,8 @@ test('a tampered fragment is rejected', async () => {
   await assert.rejects(decodeFragment('not-gzip'));
 });
 
-test("the skill reference's example is a valid notes file", async () => {
-  const { readFileSync } = await import('node:fs');
-  const doc = readFileSync('plugin/skills/anno-tater/reference.md', 'utf8');
+test("the skill reference's example is a valid notes file", () => {
+  const doc = readFileSync('skill/reference.md', 'utf8');
   const example = /```json\n([\s\S]*?)\n```/.exec(doc)?.[1] ?? '';
   assert.deepEqual(validate(JSON.parse(example)), []);
 });
