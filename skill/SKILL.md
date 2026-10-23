@@ -15,7 +15,7 @@ Run the CLI as `node <this skill's base directory>/bin/tater.mjs`, called `tater
 2. **Write the notes file** in your scratch directory, never in a repo the page belongs to. Format: [reference.md](reference.md). Done when `tater check <file>` prints `ok`.
 3. **Show it.** `tater open <file>` stores the notes and opens `url` in the person's default browser (`--browser chrome|firefox|zen` to choose). The page URL is the key: a page has one notes file and one conversation, in every browser. `tater push <file>` updates it, and open pages redraw live when the helper is installed. The first time on a site the person clicks Allow once.
 4. **Check placement.** Ask the person whether anything sits in the panel's "Couldn't place" list, and fix those quotes.
-5. **Listen for replies.** `tater status` shows whether the helper is installed. If it is, start a Monitor on `tater watch --page <url>` (open and push print it): each new message arrives as one JSON line with `id`, `kind`, `noteId`, `url`, `quote`, and `text`.
+5. **Listen for replies.** `tater status` shows whether the helper is installed. If it is, start a Monitor on `tater watch --page <url>` (open and push print it): each new message arrives as one JSON line with `id`, `kind`, `noteId`, `url`, `quote`, and `text`. The Monitor stops after its timeout; when it does, start it again. Nothing is lost while it's down: on start it prints every message still unanswered.
 6. **Answer every message** with `tater reply <id> "<text>"` (use `-` and stdin for long text). The answer lands in that note's thread, and the page shows the person an alert. Per kind:
    - `reply`: answer the question in the thread.
    - `ask`: a question about text they selected; your reply becomes a new note anchored there.

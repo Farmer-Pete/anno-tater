@@ -43,7 +43,7 @@ type RoughAnnotation = ReturnType<typeof annotate>;
 type RoughAnnotationConfig = Parameters<typeof annotate>[1];
 interface Placed { note: Note; range: Range; ambiguous: boolean }
 interface TermHit { term: Term; range: Range }
-interface Mark { p: Placed; proxy: HTMLDivElement; ann: RoughAnnotation; last: string }
+interface Mark { p: Placed; proxy: HTMLDivElement; ann: RoughAnnotation | null; type: string; last: string }
 
 const kindOf = (n: Note) => KINDS[n.kind] ?? KINDS.info;
 // Per-page UI state is keyed by the page's URL: with several channels on a page, no single notes
@@ -67,6 +67,9 @@ function float(el: HTMLElement, ref: VirtualElement, placement: 'bottom-start' |
 const claudeKeys = (n: Note) => (n.thread ?? []).flatMap((m, i) => (m.from === 'claude' ? [`${n.id}#${i}`] : []));
 
 const pageRect = (r: DOMRect) => ({ x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height });
+
+// How many lines a range covers (its client rects, grouped by top edge).
+const lineCount = (range: Range) => new Set([...range.getClientRects()].map(r => Math.round(r.top))).size;
 
 const blockOf = (range: Range) =>
   range.startContainer.parentElement?.closest('p, li, td, th, pre, h1, h2, h3, h4, h5, h6, div') ?? range.startContainer.parentElement;
@@ -367,7 +370,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     if (!data || hidden() || e.composedPath().includes(host)) return;
     if (!document.getSelection()?.isCollapsed) return;
     const hit = hitAt(e.clientX, e.clientY);
-    if (hit?.p) { hideTip(); openCard(hit.p); } else if (card && !hit) closeCard();
+    if (hit?.p) {
+      // A note on a link opens the card instead of following the link; Cmd/Ctrl/Shift-click still follows it.
+      if (!e.metaKey && !e.ctrlKey && !e.shiftKey) e.preventDefault();
+      hideTip();
+      openCard(hit.p);
+    } else if (card && !hit) closeCard();
   }
 
   // ---------- painting ----------
@@ -388,16 +396,27 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
 
 
   function buildMarks(): void {
-    for (const m of marks) { m.ann.remove(); m.proxy.remove(); }
+    for (const m of marks) { m.ann?.remove(); m.proxy.remove(); }
     marks = [];
     for (const p of placed) {
       if (!p.note.decorate) continue;
       const proxy = h('div', { class: 'proxy' });
       marksLayer.append(proxy);
-      const config: RoughAnnotationConfig = { type: p.note.decorate, color: kindOf(p.note).color, padding: 4, strokeWidth: 2, animate: true, animationDuration: 600 };
-      if (p.note.decorate === 'bracket') config.brackets = ['left', 'right'];
-      marks.push({ p, proxy, ann: annotate(proxy, config), last: '' });
+      marks.push({ p, proxy, ann: null, type: '', last: '' });
     }
+  }
+
+  // A box, circle, or underline drawn around the bounding box of text that wraps would cut
+  // through the lines between, so wrapped text gets a bracket instead.
+  function decorate(m: Mark, lines: number): void {
+    const decoration = m.p.note.decorate ?? 'box';
+    const type = lines > 1 ? 'bracket' : decoration;
+    if (m.ann && m.type === type) return;
+    m.ann?.remove();
+    const config: RoughAnnotationConfig = { type, color: kindOf(m.p.note).color, padding: 4, strokeWidth: 2, animate: !m.ann, animationDuration: 600 };
+    if (type === 'bracket') config.brackets = ['left', 'right'];
+    m.ann = annotate(m.proxy, config);
+    m.type = type;
   }
 
   function renderPins(): void {
@@ -447,23 +466,29 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       if (sig === m.last) continue;
       m.last = sig;
       Object.assign(m.proxy.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
-      if (r.w && r.h) m.ann.show(); else m.ann.hide();
+      decorate(m, lineCount(m.p.range));
+      if (r.w && r.h) m.ann?.show(); else m.ann?.hide();
     }
     arrowSvg.replaceChildren();
     const docW = document.documentElement.clientWidth + scrollX;
+    const taken: { x: number; y: number }[] = [];
     for (const el of pins) {
       const p = placed.find(q => q.note.id === el.dataset.id);
       const first = p?.range.getClientRects()[0];
       if (!p || !first) { el.style.display = 'none'; continue; }
       el.style.display = '';
-      // The pin sits in the left gutter of its text block; with no room there, in the right margin.
+      // The pin sits in the left gutter of its text block (with no room there, in the right
+      // margin), and moves aside for a pin already on the same line. Its arrow ends at the start
+      // of the line, never inside the text; the highlight marks the exact words.
       const br = blockOf(p.range)?.getBoundingClientRect() ?? first;
-      let x = br.left + scrollX - 44;
-      if (x < scrollX + 4) x = Math.min(br.right + scrollX + 16, docW - 34);
-      const r = pageRect(first);
-      const y = r.y + r.h / 2 - 12;
+      const left = br.left + scrollX - 44 >= scrollX + 4;
+      const y = first.top + scrollY + first.height / 2 - 12;
+      let x = left ? br.left + scrollX - 44 : Math.min(br.right + scrollX + 16, docW - 34);
+      while (taken.some(t => Math.abs(t.y - y) < 24 && Math.abs(t.x - x) < 24)) x += left ? -28 : 28;
+      taken.push({ x, y });
       Object.assign(el.style, { left: `${x}px`, top: `${y}px` });
-      arrowSvg.append(stepArrow({ x, y, w: 24, h: 24 }, r));
+      const edge = left ? br.left + scrollX : br.right + scrollX;
+      arrowSvg.append(stepArrow({ x, y, w: 24, h: 24 }, { x: edge - 1, y: first.top + scrollY, w: 2, h: first.height }));
     }
     for (const link of data.links ?? []) {
       const a = placed.find(p => p.note.id === link.from), b = placed.find(p => p.note.id === link.to);
@@ -620,7 +645,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       dead = true;
       for (const c of cleanups) c();
       closeCard(); hideTip(); hideAsk();
-      for (const m of marks) m.ann.remove();
+      for (const m of marks) m.ann?.remove();
       for (const k of [...KIND_NAMES, 'term', 'active']) CSS.highlights.delete(`at-${k}`);
       document.adoptedStyleSheets = document.adoptedStyleSheets.filter(s => s !== pageSheet);
       host.remove();
