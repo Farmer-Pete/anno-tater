@@ -596,10 +596,16 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   // Pages like GitHub swap out the nodes under a range after load; re-anchor when that happens.
   const broken = () => placed.some(p => !p.range.startContainer.isConnected || !p.range.endContainer.isConnected)
     || terms.some(t => !t.range.startContainer.isConnected);
+  // Single-page apps render text after the notes arrive; re-anchor once a missing quote shows up.
+  const arrived = () => {
+    if (!unplaced.length) return false;
+    const text = norm(scopeRoot().textContent ?? '');
+    return unplaced.some(n => text.includes(norm(n.quote)));
+  };
   let moTimer = 0;
   const mo = new MutationObserver(() => {
     clearTimeout(moTimer);
-    moTimer = window.setTimeout(() => { if (broken()) render(); else layout(); }, 250);
+    moTimer = window.setTimeout(() => { if (broken() || arrived()) render(); else layout(); }, 250);
   });
   let scrollQueued = false;
   const onScroll = (e: Event) => {
