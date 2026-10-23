@@ -177,7 +177,7 @@ switch (values.help ? 'help' : command) {
   }
   case 'install':
     for (const f of install(browsers(values.browser, ['chrome', 'firefox']))) console.log(`wrote ${f}`);
-    console.log('Restart the browser if Anno Tater was already running.');
+    console.log('Anno Tater picks the helper up the next time you open its popup or load a page with notes.');
     break;
   case 'uninstall':
     for (const f of uninstall(browsers(values.browser, ['chrome', 'firefox']))) console.log(`removed ${f}`);

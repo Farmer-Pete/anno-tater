@@ -2,7 +2,7 @@
 // Browsers won't let an extension write these files, so a person runs `tater install` once.
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHROME_ID, FIREFOX_ID, HOST_NAME } from '../shared/protocol.ts';
 import { dataDir } from './store.ts';
@@ -26,12 +26,22 @@ function manifestDir(browser: Browser): string {
 const manifestPath = (browser: Browser) => join(manifestDir(browser), `${HOST_NAME}.json`);
 const launcherPath = () => join(dataDir(), 'bin', 'anno-tater-host');
 
+// The node on PATH, as a path that survives upgrades (Homebrew's /opt/homebrew/bin/node, not the
+// versioned Cellar path that process.execPath resolves to).
+function nodePath(): string {
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    const candidate = join(dir, 'node');
+    if (dir && existsSync(candidate)) return candidate;
+  }
+  return process.execPath;
+}
+
 // The browser starts the launcher without a shell PATH, so it names node and the script by absolute path.
 function writeLauncher(): string {
   const script = fileURLToPath(new URL('./main.ts', import.meta.url));
   const path = launcherPath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `#!/bin/sh\nexec "${process.execPath}" --disable-warning=ExperimentalWarning "${script}" "$@"\n`);
+  writeFileSync(path, `#!/bin/sh\nexec "${nodePath()}" --disable-warning=ExperimentalWarning "${script}" "$@"\n`);
   chmodSync(path, 0o755);
   return path;
 }

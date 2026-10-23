@@ -76,7 +76,7 @@ async function render(): Promise<void> {
 
   const helper = state.helper === 'connected'
     ? [el('p', 'Two-way: your replies reach Claude.')]
-    : [el('p', 'One-way: Claude can show notes, but replies need the helper. From the anno-tater folder, run:'), command('npm run tater -- install'), el('p', 'Then restart the browser.', 'muted')];
+    : [el('p', 'One-way: Claude can show notes, but replies need the helper. From the anno-tater folder, run:'), command('npm run tater -- install'), el('p', 'Then reopen this popup.', 'muted')];
   if (isFirefox) helper.push(el('p', 'So `tater open` can reach this browser, run once:', 'muted'), command(`npm run tater -- config firefox-base ${ext.runtime.getURL('').replace(/\/$/, '')}`));
   root.append(section('Helper', ...helper));
 }

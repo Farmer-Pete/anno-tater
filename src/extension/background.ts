@@ -99,6 +99,7 @@ async function refresh(port: Port): Promise<void> {
 
 ext.runtime.onConnect.addListener(port => {
   if (port.name !== 'page') return;
+  connectHelper(); // installed since the browser started? pick it up without a restart
   pages.set(port, { url: '', match: null, tabId: port.sender?.tab?.id });
   port.onDisconnect.addListener(() => pages.delete(port));
   port.onMessage.addListener(raw => {
@@ -159,6 +160,7 @@ ext.permissions.onRemoved.addListener(() => { void syncContentScripts().then(upd
 ext.runtime.onMessage.addListener((raw, _sender, reply) => {
   const m = raw as Request;
   if (m.type === 'popup') {
+    connectHelper();
     void (async () => {
       const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
       const port = [...pages].find(([, i]) => i.tabId === tab?.id);

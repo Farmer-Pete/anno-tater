@@ -29,7 +29,7 @@ npm run build
 
 ### Replies (optional)
 
-Without anything else installed, the agent can show notes but you can't reply. For replies, register the helper once and restart the browser:
+Without anything else installed, the agent can show notes but you can't reply. For replies, register the helper once:
 
 ```sh
 npm run tater -- install
