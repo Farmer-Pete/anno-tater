@@ -1,9 +1,6 @@
 // The notes file format, shared by the CLI, the helper, and the extension.
 // No Node or DOM imports: this file runs in all three.
 
-// Replies go to this inbox when a notes file names no owner.
-export const DEFAULT_OWNER = 'default';
-
 const KINDS = ['issue', 'caution', 'agree', 'info', 'step'] as const;
 export type Kind = (typeof KINDS)[number];
 const DECORATIONS = ['box', 'circle', 'underline', 'bracket'] as const;
@@ -42,7 +39,7 @@ export interface NotesFile {
   match: string;
   url?: string; // the page to open; also tells the extension which site needs access
   title?: string;
-  owner?: string;
+  channel?: string; // set by tater: the agent session's inbox, a random UUID
   scope?: string;
   notes: Note[];
   links?: Link[];
@@ -50,13 +47,13 @@ export interface NotesFile {
   acked?: string[];
 }
 
-// What the page sends back. The helper appends these to the owner's inbox.
+// What the page sends back. The helper appends these to the channel's inbox.
 export interface Outgoing {
   id: string;
   at: string;
   page: string;
   match: string;
-  owner: string;
+  channel: string;
   kind: 'reply' | 'ask' | 'done' | 'undone';
   noteId: string | null;
   quote?: string;
@@ -93,7 +90,7 @@ export function validate(v: unknown): Problems {
   const problems: Problems = [];
   if (!isObj(v)) return ['the notes file must be a JSON object'];
   if (!str(v.match) || !v.match) problems.push('match must be a non-empty part of the page URL');
-  for (const k of ['url', 'title', 'owner', 'scope'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
+  for (const k of ['url', 'title', 'channel', 'scope'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
   if (str(v.url) && str(v.match) && !comparableUrl(v.url).includes(v.match)) problems.push('url must contain match');
   if (!Array.isArray(v.notes)) problems.push('notes must be a list');
   else {
@@ -127,14 +124,20 @@ export function parseNotes(json: string): NotesFile {
 // ---------- URL matching ----------
 
 // A notes file applies to a page when its match string appears in the URL, ignoring the
-// scheme and the fragment. With several matches, the longest (most specific) wins.
+// scheme and the fragment. Each channel is one layer on the page: per channel the longest
+// (most specific) match wins, and the layers come back newest first.
 export const comparableUrl = (url: string) => url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/#.*$/, '');
 
-export function pickNotes<T extends { match: string }>(files: Iterable<T>, url: string): T | null {
+export function pickLayers<T extends { match: string; channel?: string; rev?: number }>(files: Iterable<T>, url: string): T[] {
   const target = comparableUrl(url);
-  let best: T | null = null;
-  for (const f of files) if (target.includes(f.match) && (!best || f.match.length > best.match.length)) best = f;
-  return best;
+  const best = new Map<string, T>();
+  for (const f of files) {
+    if (!target.includes(f.match)) continue;
+    const key = f.channel ?? '';
+    const current = best.get(key);
+    if (!current || f.match.length > current.match.length) best.set(key, f);
+  }
+  return [...best.values()].toSorted((a, b) => (b.rev ?? 0) - (a.rev ?? 0));
 }
 
 // The origin pattern a browser permission needs for a URL, e.g. "https://github.com/*".

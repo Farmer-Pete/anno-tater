@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { decodeFragment, encodeFragment, findQuote, norm, originPattern, parseNotes, pickNotes, validate, type NotesFile } from '../src/shared/notes.ts';
+import { mergeLayers } from '../src/shared/layers.ts';
+import { decodeFragment, encodeFragment, findQuote, norm, originPattern, parseNotes, pickLayers, validate, type NotesFile } from '../src/shared/notes.ts';
 
 const sample: NotesFile = {
   match: 'example.com/docs/page',
@@ -40,10 +41,29 @@ test('parseNotes reports bad JSON plainly', () => {
   assert.throws(() => parseNotes('{'), /not valid JSON/);
 });
 
-test('the most specific match wins, ignoring scheme and fragment', () => {
-  const files = [{ match: 'example.com' }, { match: 'example.com/docs' }, { match: 'other.org' }];
-  assert.equal(pickNotes(files, 'https://example.com/docs/page#top')?.match, 'example.com/docs');
-  assert.equal(pickNotes(files, 'http://nowhere.net/'), null);
+test('each channel contributes its most specific match, newest channel first', () => {
+  const files = [
+    { channel: 'a', match: 'example.com', rev: 1 }, { channel: 'a', match: 'example.com/docs', rev: 1 },
+    { channel: 'b', match: 'example.com', rev: 5 }, { channel: 'c', match: 'other.org', rev: 9 },
+  ];
+  const layers = pickLayers(files, 'https://example.com/docs/page#top');
+  assert.deepEqual(layers.map(l => [l.channel, l.match]), [['b', 'example.com'], ['a', 'example.com/docs']]);
+  assert.deepEqual(pickLayers(files, 'http://nowhere.net/'), []);
+});
+
+test('merged layers keep note ids apart and remember where each note came from', () => {
+  const a: NotesFile = { channel: 'A', match: 'x.com/p', title: 'Review', notes: [{ id: 'n1', kind: 'issue', quote: 'q' }],
+    links: [{ from: 'n1', to: 'n1' }], glossary: [{ term: 'T', def: 'from A' }], acked: ['m1'] };
+  const b: NotesFile = { channel: 'B', match: 'x.com', title: 'Steps', notes: [{ id: 'n1', kind: 'step', step: 1, quote: 'r' }],
+    glossary: [{ term: 'T', def: 'from B' }], acked: ['m2'] };
+  const { merged, origin } = mergeLayers([a, b]);
+  assert.deepEqual(merged.notes.map(n => n.id), ['A/n1', 'B/n1']);
+  assert.deepEqual(origin.get('B/n1'), { channel: 'B', match: 'x.com', id: 'n1' });
+  assert.deepEqual(merged.links, [{ from: 'A/n1', to: 'A/n1' }]);
+  assert.deepEqual(merged.glossary, [{ term: 'T', def: 'from A' }]);
+  assert.deepEqual(merged.acked, ['m1', 'm2']);
+  assert.equal(merged.title, 'Review + Steps');
+  assert.deepEqual(validate(merged), []);
 });
 
 test('originPattern covers http and https only', () => {

@@ -1,17 +1,18 @@
 // tater: the agent's side of Anno Tater.
-import { existsSync, mkdirSync, readdirSync, readFileSync, watch } from 'node:fs';
+import { mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { encodeFragment, parseNotes, type Note, type NotesFile, type Outgoing } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
-import { dataDir, defaultOwner, findPage, inboxDir, loadPages, markDelivered, readDelivered, readInbox, savePage } from '../host/store.ts';
+import { channelExists, channels, dataDir, findPage, inboxDir, loadPages, markDelivered, newChannel, readDelivered, readInbox, savePage } from '../host/store.ts';
 
 const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
-  tater push <notes.json> [--owner NAME]    Store notes; pages open in a browser with the helper update live
+  tater channel                             Create a channel: your inbox for replies (a random UUID)
   tater open <notes.json> [--browser B]     Store notes and open the page in your default browser (no helper needed)
-  tater watch [--owner NAME] [--once]       Print new messages from the page, one JSON line each
+  tater push <notes.json>                   Store or update notes; pages open with the helper redraw live
+  tater watch --channel ID [--once]         Print new messages for a channel, one JSON line each
   tater reply <message-id> <text|->         Answer a message in its thread ("-" reads the text from stdin)
   tater ack <message-id>...                 Mark messages handled without answering
   tater check <notes.json>                  Validate a notes file
@@ -19,8 +20,9 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater install [--browser B]               Register the helper with your browsers (needed for replies)
   tater uninstall [--browser B]
 
-  B is chrome, firefox, or zen (install: every browser found; open: the default browser).
-  Data lives in ${dataDir()}.`;
+  open and push use the notes file's "channel", or --channel ID, or create a new channel and write
+  it into the file, so later pushes of that file reuse it. B is chrome, firefox, or zen (install:
+  every browser found; open: the default browser). Data lives in ${dataDir()}.`;
 
 const fail = (message: string): never => { console.error(message); process.exit(1); };
 const readNotes = (file: string) => {
@@ -33,15 +35,16 @@ const targetBrowser = (b: string | undefined): Browser =>
 
 // ---------- messages ----------
 const ackedIds = () => new Set(loadPages().flatMap(p => p.acked ?? []));
-const owners = () => (existsSync(inboxDir()) ? readdirSync(inboxDir()).filter(f => f.endsWith('.jsonl')).map(f => f.slice(0, -'.jsonl'.length)) : []);
-const allMessages = () => owners().flatMap(readInbox);
+const allMessages = () => channels().flatMap(readInbox);
 const findMessage = (id: string) => allMessages().find(m => m.id === id) ?? fail(`no message with id ${id}`);
 
-function pageFor(m: Outgoing): NotesFile {
-  return findPage(m.match) ?? fail(`the notes file for ${m.match} is gone`);
+// The channel's notes for the message's page. A question asked on a page this channel hasn't
+// annotated yet starts a new notes file there.
+function pageFor(m: Outgoing): NotesFile & { channel: string } {
+  return findPage(m.channel, m.match) ?? { channel: m.channel, match: m.match, url: m.page || undefined, notes: [] };
 }
 
-function saveWithAck(page: NotesFile, ids: string[]): void {
+function saveWithAck(page: NotesFile & { channel: string }, ids: string[]): void {
   page.acked = [...new Set([...(page.acked ?? []), ...ids])];
   savePage(page);
 }
@@ -73,11 +76,12 @@ function reply(m: Outgoing, text: string): string {
 
 // Prints every message not yet acked, then follows the inboxes. Printing marks a message delivered,
 // which the page shows as "Claude has it".
-function watchInbox(owner: string | undefined, once: boolean): void {
+function watchInbox(channel: string, once: boolean): void {
+  if (!channelExists(channel)) fail(`no channel ${channel}`);
   const printed = new Set<string>();
   const flush = () => {
     const acked = ackedIds();
-    const fresh = (owner ? readInbox(owner) : allMessages()).filter(m => !acked.has(m.id) && !printed.has(m.id));
+    const fresh = readInbox(channel).filter(m => !acked.has(m.id) && !printed.has(m.id));
     for (const m of fresh) {
       printed.add(m.id);
       const { id, kind, noteId, quote, prefix, suffix, text, match } = m;
@@ -109,31 +113,39 @@ async function openPage(notes: NotesFile, browser: Browser): Promise<string> {
   return `opened ${target} in ${browserName(browser)} through the extension (one-way: run tater install for replies)`;
 }
 
-// Validates and saves a notes file, giving it an owner, and says where replies will arrive.
-function store(file: string, owner: string | undefined): NotesFile {
+// Validates and saves a notes file in its channel, creating a channel when it has none and
+// writing it back into the file so later pushes reuse it. Says where replies will arrive.
+function store(file: string, flag: string | undefined): NotesFile & { channel: string } {
   const notes = readNotes(file);
-  const before = findPage(notes.match);
-  notes.owner = owner ?? notes.owner ?? before?.owner ?? defaultOwner(notes.match);
-  if (before?.owner && before.owner !== notes.owner) console.log(`warning: replacing notes for this page that belonged to owner ${before.owner}`);
-  notes.acked = [...new Set([...(before?.acked ?? []), ...(notes.acked ?? [])])]; // keep handled messages handled
-  console.log(`saved ${savePage(notes)}`);
-  console.log(`replies: tater watch --owner ${notes.owner}`);
-  return notes;
+  const fresh = !flag && !notes.channel;
+  const channel = flag ?? notes.channel ?? newChannel();
+  if (!channelExists(channel)) fail(`no channel ${channel}; create one with tater channel`);
+  if (notes.channel !== channel) writeFileSync(file, `${JSON.stringify({ ...notes, channel }, null, 2)}\n`);
+  const before = findPage(channel, notes.match);
+  // Threads and handled messages live in the stored copy; keep them when the agent's copy lacks them.
+  const merged = { ...notes, channel, acked: [...new Set([...(before?.acked ?? []), ...(notes.acked ?? [])])] };
+  for (const note of merged.notes) note.thread ??= before?.notes.find(n => n.id === note.id)?.thread;
+  console.log(`saved ${savePage(merged)}`);
+  console.log(`${fresh ? 'new channel' : 'channel'} ${channel}; replies: tater watch --channel ${channel}`);
+  return merged;
 }
 
 // ---------- main ----------
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { owner: { type: 'string' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+  options: { channel: { type: 'string' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
 
 switch (values.help ? 'help' : command) {
+  case 'channel':
+    console.log(newChannel());
+    break;
   case 'push':
-    store(args[0] ?? fail('push needs a notes file'), values.owner);
+    store(args[0] ?? fail('push needs a notes file'), values.channel);
     break;
   case 'open': {
-    const notes = store(args[0] ?? fail('open needs a notes file'), values.owner);
+    const notes = store(args[0] ?? fail('open needs a notes file'), values.channel);
     console.log(await openPage(notes, targetBrowser(values.browser)));
     break;
   }
@@ -143,7 +155,7 @@ switch (values.help ? 'help' : command) {
     break;
   }
   case 'watch':
-    watchInbox(values.owner, values.once ?? false);
+    watchInbox(values.channel ?? fail('watch needs --channel ID (tater open and push print it)'), values.once ?? false);
     break;
   case 'reply': {
     const m = findMessage(args[0] ?? fail('reply needs a message id'));
@@ -161,10 +173,11 @@ switch (values.help ? 'help' : command) {
     console.log(`data: ${dataDir()}`);
     console.log(`default browser: ${defaultBrowser() ?? 'not supported'}`);
     console.log(`helper: ${BROWSERS.map(b => `${b} ${installed(b) ? 'installed' : 'not installed'}`).join(', ')}`);
-    for (const p of loadPages((f, why) => console.log(`  invalid ${f}: ${why}`))) console.log(`page: ${p.match} (${p.notes.length} notes, owner ${p.owner ?? defaultOwner(p.match)})`);
-    for (const o of owners()) {
-      const waiting = readInbox(o).filter(m => !acked.has(m.id));
-      if (waiting.length) console.log(`inbox ${o}: ${waiting.length} waiting (${waiting.filter(m => !delivered.has(m.id)).length} not yet picked up)`);
+    const pages = loadPages((f, why) => console.log(`invalid ${f}: ${why}`));
+    for (const c of channels()) {
+      const waiting = readInbox(c).filter(m => !acked.has(m.id));
+      console.log(`channel ${c}${waiting.length ? `: ${waiting.length} waiting (${waiting.filter(m => !delivered.has(m.id)).length} not yet picked up)` : ''}`);
+      for (const p of pages.filter(q => q.channel === c)) console.log(`  ${p.match} (${p.notes.length} notes)`);
     }
     break;
   }

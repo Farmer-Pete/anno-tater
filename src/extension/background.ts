@@ -1,6 +1,6 @@
 // The extension's background: talks to the helper (when installed), answers pages asking for
 // their notes, registers the content script for allowed sites, and drives the toolbar badge.
-import { comparableUrl, DEFAULT_OWNER, originPattern, pickNotes, type NotesFile } from '../shared/notes.ts';
+import { comparableUrl, originPattern, pickLayers, type NotesFile } from '../shared/notes.ts';
 import { HOST_NAME, type FromHost, type PageSummary } from '../shared/protocol.ts';
 import { ext, type FromPage, type PopupState, type Request, type ToPage } from './compat.ts';
 import { localPages } from './local.ts';
@@ -48,17 +48,14 @@ function onHelper(raw: unknown): void {
     for (const port of pages.keys()) void refresh(port);
     void updateBadge();
   } else if (m.type === 'pages') {
-    const before = new Map(helperPages.map(p => [p.match, p.rev]));
     helperPages = m.pages;
-    // Re-send notes to every open page whose file changed or that now has a file.
-    for (const [port, info] of pages) {
-      const now = pickNotes(helperPages, info.url);
-      if ((now?.match ?? null) !== info.match || (now && before.get(now.match) !== now.rev)) void refresh(port);
-    }
+    // Re-send notes to every open page whose layers changed: a file was added, removed, or edited.
+    for (const [port, info] of pages) if (layerKey(pickLayers(helperPages, info.url)) !== info.layers) void refresh(port);
     void updateBadge();
   } else if (m.type === 'notes') {
-    for (const r of waiting.get(m.match) ?? []) r(m.notes);
-    waiting.delete(m.match);
+    const key = `${m.channel}|${m.match}`;
+    for (const r of waiting.get(key) ?? []) r(m.notes ? { ...m.notes, channel: m.channel } : null);
+    waiting.delete(key);
   } else if (m.type === 'delivered') {
     m.ids.forEach(id => delivered.add(id));
     broadcast({ type: 'delivered', ids: m.ids });
@@ -67,42 +64,56 @@ function onHelper(raw: unknown): void {
   }
 }
 
-function askHelper(match: string): Promise<NotesFile | null> {
+function askHelper(channel: string, match: string): Promise<NotesFile | null> {
   return new Promise(resolve => {
     if (!helper) { resolve(null); return; }
-    waiting.set(match, [...(waiting.get(match) ?? []), resolve]);
-    helper.postMessage({ type: 'get', match });
+    const key = `${channel}|${match}`;
+    waiting.set(key, [...(waiting.get(key) ?? []), resolve]);
+    helper.postMessage({ type: 'get', channel, match });
   });
 }
 
 // ---------- notes lookup ----------
-async function notesFor(url: string): Promise<NotesFile | null> {
-  const fromHelper = pickNotes(helperPages, url);
-  if (fromHelper && helper) return askHelper(fromHelper.match);
-  return pickNotes(Object.values(await localPages()), url);
+// Identifies which files make up a page's layers, so a change to any of them is noticed.
+const layerKey = (layers: { channel?: string; match: string; rev?: number }[]) =>
+  layers.map(l => `${l.channel}|${l.match}|${l.rev ?? 0}`).join(' ');
+
+// Every channel's layer for a page, newest first. The helper's files win over notes the intake
+// page stored for the same channel.
+async function layersFor(url: string): Promise<NotesFile[]> {
+  const fromHelper = helper ? pickLayers(helperPages, url) : [];
+  const fetched = (await Promise.all(fromHelper.map(p => askHelper(p.channel, p.match)))).filter((n): n is NotesFile => n !== null);
+  const seen = new Set(fetched.map(n => n.channel));
+  const local = pickLayers(Object.values(await localPages()), url).filter(n => !seen.has(n.channel));
+  return [...fetched, ...local];
 }
 
+// The channel that most recently wrote notes: where a question about a page with no notes goes.
+const newestChannel = () => helperPages.toSorted((a, b) => b.rev - a.rev)[0]?.channel;
+
 // ---------- pages ----------
-const pages = new Map<Port, { url: string; match: string | null; tabId: number | undefined }>();
+const pages = new Map<Port, { url: string; layers: string; count: number; tabId: number | undefined }>();
 const activated = new Set<number>(); // tabs where the person asked to talk about a page with no notes
 const broadcast = (m: ToPage) => { for (const port of pages.keys()) port.postMessage(m); };
 
 async function refresh(port: Port): Promise<void> {
   const info = pages.get(port);
   if (!info) return;
-  let notes = await notesFor(info.url);
-  if (!notes && info.tabId !== undefined && activated.has(info.tabId)) {
-    notes = { match: comparableUrl(info.url), url: info.url, owner: DEFAULT_OWNER, notes: [] };
+  const layers = await layersFor(info.url);
+  info.layers = layerKey(pickLayers(helperPages, info.url));
+  const channel = newestChannel();
+  if (!layers.length && channel && info.tabId !== undefined && activated.has(info.tabId)) {
+    layers.push({ channel, match: comparableUrl(info.url), url: info.url, notes: [] });
   }
-  info.match = notes?.match ?? null;
-  const message: ToPage = { type: 'notes', notes, twoWay: helperState === 'connected', delivered: [...delivered] };
+  info.count = layers.reduce((n, l) => n + l.notes.length, 0);
+  const message: ToPage = { type: 'notes', layers, twoWay: helperState === 'connected', delivered: [...delivered] };
   try { port.postMessage(message); } catch { pages.delete(port); }
 }
 
 ext.runtime.onConnect.addListener(port => {
   if (port.name !== 'page') return;
   connectHelper(); // installed since the browser started? pick it up without a restart
-  pages.set(port, { url: '', match: null, tabId: port.sender?.tab?.id });
+  pages.set(port, { url: '', layers: '', count: 0, tabId: port.sender?.tab?.id });
   port.onDisconnect.addListener(() => pages.delete(port));
   port.onMessage.addListener(raw => {
     const m = raw as FromPage;
@@ -169,7 +180,7 @@ ext.runtime.onMessage.addListener((raw, _sender, reply) => {
     void (async () => {
       const [tab] = await ext.tabs.query({ active: true, currentWindow: true });
       const port = [...pages].find(([, i]) => i.tabId === tab?.id);
-      const tabNotes = port?.[1].match ? (await notesFor(port[1].url))?.notes.length ?? null : null;
+      const tabNotes = port?.[1].layers || port?.[1].count ? port[1].count : null;
       const state: PopupState = { helper: helperState, helperError, needsAccess: await needsAccess(), tabNotes };
       reply(state);
     })();

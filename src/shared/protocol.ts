@@ -7,22 +7,23 @@ export const CHROME_ID = 'pnonheeknfhclnmokcollijaflmhppdc';
 // Set in manifest/firefox.json.
 export const FIREFOX_ID = 'anno-tater@farmerpete';
 
+// One notes file: a channel's layer for the pages its match covers.
 export interface PageSummary {
+  channel: string;
   match: string;
   url?: string;
   title?: string;
-  owner?: string;
-  rev: number; // changes whenever the file does
+  rev: number; // the file's modification time; changes whenever the file does
 }
 
 export type ToHost =
-  | { type: 'get'; match: string }
+  | { type: 'get'; channel: string; match: string }
   | { type: 'send'; message: Outgoing };
 
 export type FromHost =
   | { type: 'hello'; pages: PageSummary[]; delivered: string[] }
   | { type: 'pages'; pages: PageSummary[] }
-  | { type: 'notes'; match: string; notes: NotesFile | null }
+  | { type: 'notes'; channel: string; match: string; notes: NotesFile | null }
   | { type: 'sent'; id: string }
   | { type: 'delivered'; ids: string[] }
   | { type: 'error'; message: string };

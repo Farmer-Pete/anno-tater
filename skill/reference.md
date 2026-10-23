@@ -5,7 +5,6 @@
   "match": "github.com/org/repo/blob/main/docs/design.md",
   "url": "https://github.com/org/repo/blob/main/docs/design.md",
   "title": "Design review",
-  "owner": "design-review",
   "scope": "article.markdown-body",
   "notes": [
     { "id": "s1", "kind": "step", "step": 1, "quote": "Summary", "title": "Read the summary", "body": "Then mark this step done." },
@@ -25,7 +24,7 @@
 | `match` | yes | Part of the page URL, without scheme or `#fragment`. The longest match wins when several files fit a URL. |
 | `url` | for `open` | The page to open. Must contain `match`. Also tells the extension which site needs access. |
 | `title` | no | Shown in the panel header. |
-| `owner` | no | The inbox replies go to. Default: one inbox per page, printed by `tater open` and `tater push`. |
+| `channel` | set by tater | Your inbox, a random UUID. `tater open` / `push` create one and write it here; keep it so later pushes update the same notes. |
 | `scope` | no | CSS selector for the page's main content (`article.markdown-body` on GitHub). Quotes and terms outside it are ignored, which keeps nav bars and sidebars out. Default: `main`, else `body`. |
 | `notes` | yes | The notes, below. |
 | `links` | no | Arrows between two notes, drawn down the left margin: `from`, `to` (note ids), optional `label`. |

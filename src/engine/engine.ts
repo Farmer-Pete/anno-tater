@@ -7,7 +7,7 @@
 import { autoUpdate, computePosition, flip, offset, shift, type VirtualElement } from '@floating-ui/dom';
 import { getBoxToBoxArrow } from 'perfect-arrows';
 import { annotate } from 'rough-notation';
-import { norm, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { comparableUrl, norm, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { anchor, buildIndex, context, findTerms } from './anchor.ts';
 import { h, inline, md, svg } from './dom.ts';
 import { POTATO } from './potato.ts';
@@ -39,6 +39,9 @@ interface Mark { p: Placed; proxy: HTMLDivElement; ann: RoughAnnotation; last: s
 type Pending = Outgoing & { pending: true };
 
 const kindOf = (n: Note) => KINDS[n.kind] ?? KINDS.info;
+// Per-page UI state is keyed by the page's URL: with several channels on a page, no single notes
+// file names it.
+const pageKey = (k: string) => `page:${comparableUrl(location.href)}:${k}`;
 const isEditable = (el: EventTarget | undefined) =>
   el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
@@ -94,7 +97,6 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing): En
   let activeHighlight: Highlight | null = null;
 
   // Per-page settings are keyed by the notes file's match; shortcut blocking and the panel are global.
-  const pageKey = (k: string) => `page:${data?.match ?? location.href}:${k}`;
   const hidden = () => store.get(pageKey('hidden'), false);
   const blockKeys = () => store.get('block-keys', true);
   const panelOpen = () => store.get('panel-open', true);

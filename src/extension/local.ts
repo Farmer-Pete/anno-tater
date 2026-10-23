@@ -1,4 +1,5 @@
-// Notes delivered without the helper (through the intake page), kept in extension storage by match.
+// Notes delivered without the helper (through the intake page), kept in extension storage,
+// one entry per channel and page.
 import type { NotesFile } from '../shared/notes.ts';
 import { ext } from './compat.ts';
 
@@ -8,5 +9,5 @@ export async function localPages(): Promise<Record<string, NotesFile>> {
 }
 
 export async function saveLocalPage(notes: NotesFile): Promise<void> {
-  await ext.storage.local.set({ pages: { ...(await localPages()), [notes.match]: notes } });
+  await ext.storage.local.set({ pages: { ...(await localPages()), [`${notes.channel ?? ''}|${notes.match}`]: notes } });
 }

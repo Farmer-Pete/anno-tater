@@ -11,7 +11,7 @@ export type FromPage =
   | { type: 'send'; message: Outgoing };
 
 export type ToPage =
-  | { type: 'notes'; notes: NotesFile | null; twoWay: boolean; delivered: string[] }
+  | { type: 'notes'; layers: NotesFile[]; twoWay: boolean; delivered: string[] } // one per channel, newest first
   | { type: 'delivered'; ids: string[] }
   | { type: 'twoWay'; on: boolean }
   | { type: 'toggle-hidden' };

@@ -50,7 +50,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 {
   "match": "github.com/org/repo/blob/main/docs/design.md",
   "title": "Design review",
-  "owner": "seg-247-review",
+  "channel": "3f2c9e4a-…",
   "scope": "article.markdown-body",
   "notes": [
     { "id": "n1", "kind": "issue", "quote": "exact text on the page", "prefix": "optional", "suffix": "optional",
@@ -63,7 +63,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 ```
 
 - `match` is a substring of the page URL.
-- `owner` names the inbox that receives replies. It defaults to one inbox per page (`page-<hash>`), so agents working on different pages never share one. `tater open` and `tater push` print the `tater watch --owner <name>` command for it.
+- `channel` is the agent session's inbox: a random UUID that `tater` creates on the first `open` or `push` and writes back into the agent's file. `tater watch --channel <id>` prints that inbox.
 - `kind` is one of `issue`, `caution`, `agree`, `info`, `step`. Steps also have `step: <number>`.
 - `decorate` is one of `box`, `circle`, `underline`, `bracket`.
 - Anchoring follows the W3C TextQuoteSelector: an exact quote with optional prefix and suffix. A quote that isn't found goes in the panel's "Couldn't place" list. Nothing is placed by a guess.
@@ -76,7 +76,11 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 
 ## Several browsers and sessions
 
-Each browser starts its own helper; all of them share one data folder. Notes files aren't tied to a browser, and replies route by owner, so two Claude sessions can chat through Chrome and Zen at the same time without crossing. Receipts (`delivered.jsonl`) and inboxes are append-only, so concurrent writers don't overwrite each other. Two sessions writing notes for the same page do collide: the last `push` wins, and `push` warns when it replaces another owner's notes.
+Each agent session works in its own **channel**, a random UUID that `tater` creates. Notes live in `pages/<channel>/<page>.json` and replies in `inbox/<channel>.jsonl`, so nothing an agent names can collide.
+
+- **Several channels on one page.** Each channel's file for a page is a layer. The background fetches every layer (per channel, the most specific `match`), and the content script merges them: note ids are namespaced by channel, glossaries and acks are unioned, and a map remembers which channel and file wrote each note. A reply or a ticked step goes to that note's channel. A question about plain text goes to the newest layer's channel.
+- **Several browsers.** Each browser starts its own helper; all share the data folder. Inboxes and receipts (`delivered.jsonl`) are append-only, so concurrent writers don't overwrite each other.
+- **A page with no notes.** "Ask Claude about this page" sends the question to the channel that most recently wrote notes anywhere.
 
 ## Native messaging
 

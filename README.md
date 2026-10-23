@@ -39,11 +39,11 @@ Under the hood the skill runs `tater`:
 ```sh
 tater open notes.json      # store the notes and open the page in the default browser
 tater push notes.json      # update notes; open pages redraw live (needs the helper)
-tater watch --owner NAME   # print the person's messages, one JSON line each
+tater watch --channel ID   # print the person's messages, one JSON line each
 tater reply <id> "text"    # answer a message in its thread
 ```
 
-Each page gets its own inbox (`owner`), so several Claude sessions can each annotate their own page, in one browser or several, without seeing each other's messages. The notes format is in [skill/reference.md](skill/reference.md), and the design in [docs/design.md](docs/design.md).
+Each Claude session gets its own channel, a random UUID that `tater` creates. Several sessions can annotate the same page or different ones, in one browser or several: the page shows every channel's notes, and each reply goes to the channel that wrote its note. The notes format is in [skill/reference.md](skill/reference.md), and the design in [docs/design.md](docs/design.md).
 
 ## Site access
 

@@ -2,7 +2,8 @@
 // and hands them to the engine. Does nothing visible on a page without notes.
 import { createEngine, type Store } from '../engine/engine.ts';
 import { ext, type FromPage, type ToPage } from './compat.ts';
-import { DEFAULT_OWNER, type NotesFile, type Outgoing } from '../shared/notes.ts';
+import { mergeLayers, type Origin } from '../shared/layers.ts';
+import type { NotesFile, Outgoing } from '../shared/notes.ts';
 
 const FLAG = '__annoTaterLoaded';
 const g = globalThis as Record<string, unknown>;
@@ -18,20 +19,26 @@ if (!g[FLAG]) {
     set: (key, value) => { cache[key] = value; void ext.storage.local.set({ [`ui:${key}`]: value }); },
   };
 
-  let notes: NotesFile | null = null;
+  let notes: NotesFile | null = null;  // the merged layers the engine draws
+  let layers: NotesFile[] = [];          // one per channel, newest first
+  let origin = new Map<string, Origin>(); // merged note id -> the channel and file that wrote it
   let port: chrome.runtime.Port | null = null;
   const post = (m: FromPage) => port?.postMessage(m);
 
+  // The engine works with merged note ids. The helper gets the message addressed to the channel
+  // that wrote the note; a question about plain text goes to the newest layer's channel.
   const engine = createEngine(store, draft => {
+    const from = draft.noteId ? origin.get(draft.noteId) : undefined;
+    const newest = layers[0];
     const message: Outgoing = {
       ...draft,
       id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       at: new Date().toISOString(),
       page: location.href,
-      match: notes?.match ?? location.href,
-      owner: notes?.owner ?? DEFAULT_OWNER,
+      channel: from?.channel ?? newest?.channel ?? '',
+      match: from?.match ?? newest?.match ?? location.href,
     };
-    post({ type: 'send', message });
+    post({ type: 'send', message: { ...message, noteId: from?.id ?? null } });
     return message;
   });
 
@@ -45,7 +52,10 @@ if (!g[FLAG]) {
   function onMessage(raw: unknown): void {
     const m = raw as ToPage;
     if (m.type === 'notes') {
-      notes = m.notes;
+      layers = m.layers;
+      const merged = layers.length ? mergeLayers(layers) : null;
+      notes = merged?.merged ?? null;
+      origin = merged?.origin ?? new Map();
       engine.load(notes, m.twoWay);
       engine.setDelivered(m.delivered);
       startWhenReady();

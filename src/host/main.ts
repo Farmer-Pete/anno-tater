@@ -1,7 +1,7 @@
 // The native messaging host. The browser starts it with the extension's id as an argument and
 // talks to it over stdin/stdout. Anything written to stdout must be a framed message, so logs go to stderr.
 import { mkdirSync, statSync, watch } from 'node:fs';
-import { DEFAULT_OWNER, type NotesFile } from '../shared/notes.ts';
+import type { NotesFile } from '../shared/notes.ts';
 import type { FromHost, PageSummary, ToHost } from '../shared/protocol.ts';
 import { decoder, encode } from './framing.ts';
 import { appendInbox, dataDir, DELIVERED, findPage, loadPages, pageFile, pagesDir, readDelivered } from './store.ts';
@@ -9,19 +9,20 @@ import { appendInbox, dataDir, DELIVERED, findPage, loadPages, pageFile, pagesDi
 const send = (message: FromHost) => process.stdout.write(encode(message));
 const log = (...args: unknown[]) => console.error('[anno-tater host]', ...args);
 
-const rev = (match: string) => {
-  try { return statSync(pageFile(match)).mtimeMs; } catch { return 0; }
+const rev = (channel: string, match: string) => {
+  try { return statSync(pageFile(channel, match)).mtimeMs; } catch { return 0; }
 };
-const summary = (p: NotesFile): PageSummary => ({ match: p.match, url: p.url, title: p.title, owner: p.owner, rev: rev(p.match) });
+const summary = (p: NotesFile & { channel: string }): PageSummary =>
+  ({ channel: p.channel, match: p.match, url: p.url, title: p.title, rev: rev(p.channel, p.match) });
 const pages = () => loadPages((file, problem) => log(`skipping ${file}: ${problem}`)).map(summary);
 
 function handle(raw: unknown): void {
   const message = raw as ToHost;
   try {
     if (message.type === 'get') {
-      send({ type: 'notes', match: message.match, notes: findPage(message.match) });
+      send({ type: 'notes', channel: message.channel, match: message.match, notes: findPage(message.channel, message.match) });
     } else if (message.type === 'send') {
-      appendInbox({ ...message.message, owner: message.message.owner || DEFAULT_OWNER });
+      appendInbox(message.message);
       send({ type: 'sent', id: message.message.id });
     }
   } catch (e) {
@@ -36,7 +37,7 @@ function debounced(fn: () => void, ms = 150): () => void {
 }
 
 mkdirSync(pagesDir(), { recursive: true });
-watch(pagesDir(), debounced(() => send({ type: 'pages', pages: pages() })));
+watch(pagesDir(), { recursive: true }, debounced(() => send({ type: 'pages', pages: pages() })));
 let lastDelivered = readDelivered();
 watch(dataDir(), (_event, file) => { if (file === DELIVERED) onDelivered(); });
 const onDelivered = debounced(() => {
