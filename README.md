@@ -39,14 +39,23 @@ This writes a small manifest that lets the browser start the helper (`src/host/m
 
 ## For the agent
 
-```sh
-npm run tater -- open notes.json      # store the notes and open the page
-npm run tater -- push notes.json      # store or update notes; open pages update live (needs the helper)
-npm run tater -- watch --owner NAME   # print the person's messages, one JSON line each
-npm run tater -- reply <id> "text"    # answer a message in its thread
+Install the Claude Code plugin, which teaches Claude the notes format and the commands:
+
+```
+/plugin marketplace add Farmer-Pete/anno-tater
+/plugin install anno-tater@anno-tater
 ```
 
-The notes format is in [docs/design.md](docs/design.md).
+`tater install` also puts the CLI at `~/.local/share/anno-tater/bin/tater`, where the plugin's skill looks for it:
+
+```sh
+tater open notes.json      # store the notes and open the page
+tater push notes.json      # store or update notes; open pages update live (needs the helper)
+tater watch --owner NAME   # print the person's messages, one JSON line each
+tater reply <id> "text"    # answer a message in its thread
+```
+
+The notes format is in [plugin/skills/anno-tater/reference.md](plugin/skills/anno-tater/reference.md), and the design in [docs/design.md](docs/design.md).
 
 ## Site access
 

@@ -24,7 +24,9 @@ function manifestDir(browser: Browser): string {
 }
 
 const manifestPath = (browser: Browser) => join(manifestDir(browser), `${HOST_NAME}.json`);
-const launcherPath = () => join(dataDir(), 'bin', 'anno-tater-host');
+const binDir = () => join(dataDir(), 'bin');
+const launcherPath = () => join(binDir(), 'anno-tater-host');
+export const cliPath = () => join(binDir(), 'tater');
 
 // The node on PATH, as a path that survives upgrades (Homebrew's /opt/homebrew/bin/node, not the
 // versioned Cellar path that process.execPath resolves to).
@@ -37,17 +39,17 @@ function nodePath(): string {
 }
 
 // The browser starts the launcher without a shell PATH, so it names node and the script by absolute path.
-function writeLauncher(): string {
-  const script = fileURLToPath(new URL('./main.ts', import.meta.url));
-  const path = launcherPath();
+function writeLauncher(path: string, script: string): string {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `#!/bin/sh\nexec "${nodePath()}" --disable-warning=ExperimentalWarning "${script}" "$@"\n`);
+  writeFileSync(path, `#!/bin/sh\nexec "${nodePath()}" --disable-warning=ExperimentalWarning "${fileURLToPath(new URL(script, import.meta.url))}" "$@"\n`);
   chmodSync(path, 0o755);
   return path;
 }
 
+// Writes the helper's launcher and manifests, plus a `tater` launcher at a fixed path for agents.
 export function install(browsers: Browser[]): string[] {
-  const path = writeLauncher();
+  writeLauncher(cliPath(), '../cli/tater.ts');
+  const path = writeLauncher(launcherPath(), './main.ts');
   return browsers.map(browser => {
     const manifest = {
       name: HOST_NAME,
@@ -66,7 +68,7 @@ export function install(browsers: Browser[]): string[] {
 export function uninstall(browsers: Browser[]): string[] {
   const removed = browsers.map(manifestPath).filter(existsSync);
   for (const file of removed) rmSync(file);
-  if (browsers.length === 2) rmSync(launcherPath(), { force: true });
+  if (browsers.length === 2) for (const f of [launcherPath(), cliPath()]) rmSync(f, { force: true });
   return removed;
 }
 

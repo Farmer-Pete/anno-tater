@@ -1,0 +1,14 @@
+{
+  "name": "anno-tater",
+  "description": "Anno Tater: lets a coding agent mark up web pages for you, and lets you answer from the page.",
+  "owner": {
+    "name": "Farmer-Pete"
+  },
+  "plugins": [
+    {
+      "name": "anno-tater",
+      "source": "./plugin",
+      "description": "Teaches Claude to write Anno Tater notes files, show them in your browser, and answer your replies."
+    }
+  ]
+}

@@ -75,3 +75,10 @@ test('notes survive the URL fragment round trip', async () => {
 test('a tampered fragment is rejected', async () => {
   await assert.rejects(decodeFragment('not-gzip'));
 });
+
+test("the skill reference's example is a valid notes file", async () => {
+  const { readFileSync } = await import('node:fs');
+  const doc = readFileSync('plugin/skills/anno-tater/reference.md', 'utf8');
+  const example = /```json\n([\s\S]*?)\n```/.exec(doc)?.[1] ?? '';
+  assert.deepEqual(validate(JSON.parse(example)), []);
+});

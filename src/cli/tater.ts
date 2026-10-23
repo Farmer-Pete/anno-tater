@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { DEFAULT_OWNER, encodeFragment, parseNotes, type Note, type NotesFile, type Outgoing } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
-import { install, installed, uninstall, type Browser } from '../host/install.ts';
+import { cliPath, install, installed, uninstall, type Browser } from '../host/install.ts';
 import { dataDir, findPage, inboxDir, loadPages, markDelivered, readDelivered, readInbox, savePage } from '../host/store.ts';
 
 const USAGE = `tater: let an agent mark up web pages with Anno Tater
@@ -177,6 +177,7 @@ switch (values.help ? 'help' : command) {
   }
   case 'install':
     for (const f of install(browsers(values.browser, ['chrome', 'firefox']))) console.log(`wrote ${f}`);
+    console.log(`agents can run tater as ${cliPath()}`);
     console.log('Anno Tater picks the helper up the next time you open its popup or load a page with notes.');
     break;
   case 'uninstall':
