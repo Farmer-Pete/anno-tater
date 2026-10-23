@@ -1,0 +1,21 @@
+{
+  // Type-checking only for the Node side (CLI, helper, shared, scripts). Node runs the .ts files directly.
+  // The extension has its own config in src/extension.
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "esnext",
+    "module": "nodenext",
+    "types": ["node"],
+    // What Node's type stripping can run: .ts imports, and no enums, namespaces, or parameter properties.
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true
+  },
+  "include": ["src/shared", "src/host", "src/cli", "scripts", "test"]
+}

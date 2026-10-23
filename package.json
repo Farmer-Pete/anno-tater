@@ -1,0 +1,36 @@
+{
+  "name": "anno-tater",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lets a coding agent mark up any web page for you, and lets you answer from the page.",
+  "license": "MIT",
+  "repository": "github:Farmer-Pete/anno-tater",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "tater": "node --disable-warning=ExperimentalWarning src/cli/tater.ts",
+    "test": "node --test",
+    "check": "tsc && tsc -p src/extension && oxlint --deny-warnings && knip && jscpd --exit-code --reporters console src && sh scripts/no-suppressions.sh && node --test && node scripts/build.ts"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "dependencies": {
+    "@floating-ui/dom": "1.8.0",
+    "perfect-arrows": "0.3.7",
+    "rough-notation": "0.5.1"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.4",
+    "@types/node": "26.6.4",
+    "esbuild": "0.28.2",
+    "jscpd": "5.4.0",
+    "knip": "6.40.0",
+    "oxlint": "1.87.0",
+    "typescript": "7.0.2"
+  },
+  "overrides": {
+    "smol-toml": "1.9.0",
+    "zod": "4.6.5"
+  }
+}

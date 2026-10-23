@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/tsconfig.json)",
+      "Edit(/.oxlintrc.json)",
+      "Edit(/knip.json)",
+      "Edit(/.npmrc)",
+      "Edit(/.githooks/**)",
+      "Edit(/scripts/no-suppressions.sh)",
+      "Edit(/.claude/settings.json)",
+      "Edit(/.claude/hooks/**)",
+      "Edit(/src/extension/tsconfig.json)",
+      "Edit(/.github/workflows/**)"
+    ],
+    "ask": [
+      "Edit(/package.json)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/no-skipped-checks.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

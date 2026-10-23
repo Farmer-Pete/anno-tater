@@ -1,0 +1,10 @@
+{
+  // The extension and the page engine run in the browser: DOM and extension types instead of Node's.
+  // esbuild bundles them; this config only type-checks.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["chrome"],
+    "lib": ["esnext", "dom", "dom.iterable"]
+  },
+  "include": ["*.ts", "../engine", "../shared"]
+}

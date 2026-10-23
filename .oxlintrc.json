@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "node"],
+  "categories": { "correctness": "error", "suspicious": "error" },
+  "env": { "browser": true, "node": true, "webextensions": true, "es2024": true },
+  "rules": {
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "no-empty": "error",
+    "no-unused-vars": ["error", { "ignoreRestSiblings": true }],
+    // It mistakes extension runtime ports (port.postMessage(message)) for window.postMessage.
+    "unicorn/require-post-message-target-origin": "off"
+  },
+  "overrides": [
+    { "files": ["test/*.test.ts"], "rules": { "typescript/no-non-null-assertion": "off" } }
+  ]
+}

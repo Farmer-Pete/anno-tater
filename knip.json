@@ -1,0 +1,7 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "entry": ["src/cli/tater.ts", "src/host/main.ts", "src/extension/{background,content,popup,open}.ts", "scripts/build.ts", "scripts/icons.ts", "test/*.test.ts"],
+  "project": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
+  "includeEntryExports": true,
+  "ignoreBinaries": ["qlmanage", "sips"]
+}

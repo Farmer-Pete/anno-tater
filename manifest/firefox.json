@@ -1,0 +1,6 @@
+{
+  "background": { "scripts": ["background.js"] },
+  "browser_specific_settings": {
+    "gecko": { "id": "anno-tater@farmerpete", "strict_min_version": "140.0" }
+  }
+}

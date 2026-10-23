@@ -1,0 +1,196 @@
+// The notes file format, shared by the CLI, the helper, and the extension.
+// No Node or DOM imports: this file runs in all three.
+
+// Replies go to this inbox when a notes file names no owner.
+export const DEFAULT_OWNER = 'default';
+
+const KINDS = ['issue', 'caution', 'agree', 'info', 'step'] as const;
+export type Kind = (typeof KINDS)[number];
+const DECORATIONS = ['box', 'circle', 'underline', 'bracket'] as const;
+type Decoration = (typeof DECORATIONS)[number];
+
+interface Message {
+  from: 'you' | 'claude';
+  text: string;
+}
+
+export interface Note {
+  id: string;
+  kind: Kind;
+  quote: string;
+  prefix?: string;
+  suffix?: string;
+  title?: string;
+  body?: string;
+  step?: number;
+  decorate?: Decoration;
+  thread?: Message[];
+}
+
+interface Link {
+  from: string;
+  to: string;
+  label?: string;
+}
+
+export interface Term {
+  term: string;
+  def: string;
+}
+
+export interface NotesFile {
+  match: string;
+  url?: string; // the page to open; also tells the extension which site needs access
+  title?: string;
+  owner?: string;
+  scope?: string;
+  notes: Note[];
+  links?: Link[];
+  glossary?: Term[];
+  acked?: string[];
+}
+
+// What the page sends back. The helper appends these to the owner's inbox.
+export interface Outgoing {
+  id: string;
+  at: string;
+  page: string;
+  match: string;
+  owner: string;
+  kind: 'reply' | 'ask' | 'done' | 'undone';
+  noteId: string | null;
+  quote?: string;
+  prefix?: string;
+  suffix?: string;
+  text: string | null;
+}
+
+// ---------- validation ----------
+
+type Problems = string[];
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const str = (v: unknown) => typeof v === 'string';
+const optStr = (v: unknown) => v === undefined || str(v);
+
+function checkNote(n: unknown, at: string, problems: Problems): void {
+  if (!isObj(n)) { problems.push(`${at} is not an object`); return; }
+  if (!str(n.id) || !n.id) problems.push(`${at}.id must be a non-empty string`);
+  if (!KINDS.includes(n.kind as Kind)) problems.push(`${at}.kind must be one of ${KINDS.join(', ')}`);
+  if (!str(n.quote) || !String(n.quote).trim()) problems.push(`${at}.quote must be non-empty text from the page`);
+  for (const k of ['prefix', 'suffix', 'title', 'body'] as const) if (!optStr(n[k])) problems.push(`${at}.${k} must be a string`);
+  if (n.kind === 'step' && typeof n.step !== 'number') problems.push(`${at}.step must be a number for a step`);
+  if (n.decorate !== undefined && !DECORATIONS.includes(n.decorate as Decoration)) problems.push(`${at}.decorate must be one of ${DECORATIONS.join(', ')}`);
+  if (n.thread !== undefined) {
+    if (!Array.isArray(n.thread)) problems.push(`${at}.thread must be a list`);
+    else n.thread.forEach((m, i) => {
+      if (!isObj(m) || (m.from !== 'you' && m.from !== 'claude') || !str(m.text)) problems.push(`${at}.thread[${i}] needs from ("you" or "claude") and text`);
+    });
+  }
+}
+
+// Returns the problems found. An empty list means the value is a valid NotesFile.
+export function validate(v: unknown): Problems {
+  const problems: Problems = [];
+  if (!isObj(v)) return ['the notes file must be a JSON object'];
+  if (!str(v.match) || !v.match) problems.push('match must be a non-empty part of the page URL');
+  for (const k of ['url', 'title', 'owner', 'scope'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
+  if (str(v.url) && str(v.match) && !comparableUrl(v.url).includes(v.match)) problems.push('url must contain match');
+  if (!Array.isArray(v.notes)) problems.push('notes must be a list');
+  else {
+    v.notes.forEach((n, i) => checkNote(n, `notes[${i}]`, problems));
+    const ids = v.notes.map(n => (isObj(n) ? n.id : undefined));
+    const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+    if (dupes.length) problems.push(`note ids repeat: ${[...new Set(dupes)].join(', ')}`);
+    if (Array.isArray(v.links)) {
+      const known = new Set(ids);
+      v.links.forEach((l, i) => {
+        if (!isObj(l) || !known.has(l.from) || !known.has(l.to)) problems.push(`links[${i}] must join two note ids`);
+      });
+    } else if (v.links !== undefined) problems.push('links must be a list');
+  }
+  if (v.glossary !== undefined) {
+    if (!Array.isArray(v.glossary)) problems.push('glossary must be a list');
+    else v.glossary.forEach((g, i) => { if (!isObj(g) || !str(g.term) || !g.term || !str(g.def)) problems.push(`glossary[${i}] needs term and def`); });
+  }
+  if (v.acked !== undefined && !(Array.isArray(v.acked) && v.acked.every(str))) problems.push('acked must be a list of message ids');
+  return problems;
+}
+
+export function parseNotes(json: string): NotesFile {
+  let v: unknown;
+  try { v = JSON.parse(json); } catch (e) { throw new Error(`not valid JSON: ${(e as Error).message}`, { cause: e }); }
+  const problems = validate(v);
+  if (problems.length) throw new Error(problems.join('\n'));
+  return v as NotesFile;
+}
+
+// ---------- URL matching ----------
+
+// A notes file applies to a page when its match string appears in the URL, ignoring the
+// scheme and the fragment. With several matches, the longest (most specific) wins.
+export const comparableUrl = (url: string) => url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/#.*$/, '');
+
+export function pickNotes<T extends { match: string }>(files: Iterable<T>, url: string): T | null {
+  const target = comparableUrl(url);
+  let best: T | null = null;
+  for (const f of files) if (target.includes(f.match) && (!best || f.match.length > best.match.length)) best = f;
+  return best;
+}
+
+// The origin pattern a browser permission needs for a URL, e.g. "https://github.com/*".
+export function originPattern(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? `${u.protocol}//${u.hostname}/*` : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------- text anchoring (the DOM-free half) ----------
+
+export const norm = (s: string | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
+
+// Offsets in `text` where `quote` occurs, best first: by how much of the prefix and suffix
+// match around each hit. `ambiguous` is true when the top two tie.
+export function findQuote(text: string, sel: { quote: string; prefix?: string; suffix?: string }, limit = 100) {
+  const quote = norm(sel.quote);
+  if (!quote) return { hits: [] as number[], ambiguous: false };
+  const hits: number[] = [];
+  for (let i = text.indexOf(quote); i !== -1 && hits.length < limit; i = text.indexOf(quote, i + 1)) hits.push(i);
+  const pre = norm(sel.prefix), suf = norm(sel.suffix);
+  const score = (i: number) => {
+    const before = text.slice(Math.max(0, i - pre.length - 1), i).trimEnd();
+    const after = text.slice(i + quote.length).trimStart();
+    let s = 0;
+    for (let k = 1; k <= pre.length && before.endsWith(pre.slice(-k)); k++) s++;
+    for (let k = 1; k <= suf.length && after.startsWith(suf.slice(0, k)); k++) s++;
+    return s;
+  };
+  const scored = hits.map(i => ({ i, s: score(i) })).toSorted((a, b) => b.s - a.s);
+  return { hits: scored.map(h => h.i), ambiguous: scored.length > 1 && scored[0]?.s === scored[1]?.s };
+}
+
+// ---------- notes in a URL fragment (no-helper mode) ----------
+
+const toB64Url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64Url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+async function pipe(bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | DecompressionStream): Promise<Uint8Array<ArrayBuffer>> {
+  const out = new Response(new Blob([bytes]).stream().pipeThrough(stream));
+  return new Uint8Array(await out.arrayBuffer());
+}
+
+export async function encodeFragment(notes: NotesFile, target: string): Promise<string> {
+  const json = new TextEncoder().encode(JSON.stringify({ target, notes }));
+  return toB64Url(await pipe(json, new CompressionStream('gzip')));
+}
+
+export async function decodeFragment(fragment: string): Promise<{ target: string; notes: NotesFile }> {
+  const json = new TextDecoder().decode(await pipe(fromB64Url(fragment), new DecompressionStream('gzip')));
+  const v = JSON.parse(json) as { target?: unknown; notes?: unknown };
+  if (typeof v.target !== 'string') throw new Error('missing target URL');
+  const problems = validate(v.notes);
+  if (problems.length) throw new Error(problems.join('\n'));
+  return { target: v.target, notes: v.notes as NotesFile };
+}

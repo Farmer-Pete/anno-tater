@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Anno Tater",
+  "description": "Lets a coding agent mark up web pages for you: highlights that explain, steps, definitions, and replies.",
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "action": { "default_popup": "popup.html", "default_title": "Anno Tater", "default_icon": { "16": "icons/16.png", "32": "icons/32.png" } },
+  "permissions": ["storage", "scripting", "activeTab", "nativeMessaging"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"]
+}

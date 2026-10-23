@@ -1,0 +1,28 @@
+# Runs the pre-commit checks on every pull request and every push to main, so a commit made with
+# the hook skipped still gets checked.
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # macOS on ARM: the app's platform, and the platform whose tool binaries were reviewed.
+    runs-on: macos-latest
+    steps:
+      # Pinned by commit. The tag is in the comment.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          package-manager-cache: false
+      # The repo's .npmrc sets ignore-scripts, so installing runs no package code.
+      - run: npm ci
+      - run: npm run check
