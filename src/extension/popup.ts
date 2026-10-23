@@ -2,7 +2,11 @@
 import { ext, type PopupState, type Request } from './compat.ts';
 
 const root = document.getElementById('root') ?? document.body;
-const isFirefox = navigator.userAgent.includes('Firefox');
+// Firefox and its forks (Zen) report their name here; Chrome has no getBrowserInfo.
+async function geckoName(): Promise<string | null> {
+  const info = (ext.runtime as { getBrowserInfo?: () => Promise<{ name: string }> }).getBrowserInfo;
+  return info ? (await info()).name.toLowerCase() : null;
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -77,7 +81,11 @@ async function render(): Promise<void> {
   const helper = state.helper === 'connected'
     ? [el('p', 'Two-way: your replies reach Claude.')]
     : [el('p', 'One-way: Claude can show notes, but replies need the helper. From the anno-tater folder, run:'), command('npm run tater -- install'), el('p', 'Then reopen this popup.', 'muted')];
-  if (isFirefox) helper.push(el('p', 'So `tater open` can reach this browser, run once:', 'muted'), command(`npm run tater -- config firefox-base ${ext.runtime.getURL('').replace(/\/$/, '')}`));
+  const gecko = await geckoName();
+  if (gecko) {
+    const name = gecko === 'zen' ? 'zen' : 'firefox';
+    helper.push(el('p', 'So `tater open` can reach this browser, run once:', 'muted'), command(`npm run tater -- config ${name}-base ${ext.runtime.getURL('').replace(/\/$/, '')}`));
+  }
   root.append(section('Helper', ...helper));
 }
 

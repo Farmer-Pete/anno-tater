@@ -7,21 +7,33 @@ import { fileURLToPath } from 'node:url';
 import { CHROME_ID, FIREFOX_ID, HOST_NAME } from '../shared/protocol.ts';
 import { dataDir } from './store.ts';
 
-export type Browser = 'chrome' | 'firefox';
+export const BROWSERS = ['chrome', 'firefox', 'zen'] as const;
+export type Browser = (typeof BROWSERS)[number];
 
-// Per-user host manifest folders. Windows uses the registry instead and isn't supported yet.
-function manifestDir(browser: Browser): string {
-  const home = homedir();
-  if (platform() === 'darwin') {
-    return browser === 'chrome'
-      ? join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts')
-      : join(home, 'Library/Application Support/Mozilla/NativeMessagingHosts');
-  }
-  if (platform() === 'linux') {
-    return browser === 'chrome' ? join(home, '.config/google-chrome/NativeMessagingHosts') : join(home, '.mozilla/native-messaging-hosts');
-  }
-  throw new Error(`installing the helper on ${platform()} isn't supported yet`);
+// Each browser's profile folder, and where it reads per-user host manifests. Zen (a Firefox fork)
+// reads its own folder, not Mozilla's. Windows uses the registry instead and isn't supported yet.
+const FOLDERS: Partial<Record<NodeJS.Platform, Record<Browser, { app: string; hosts: string } | null>>> = {
+  darwin: {
+    chrome: { app: 'Library/Application Support/Google/Chrome', hosts: 'Library/Application Support/Google/Chrome/NativeMessagingHosts' },
+    firefox: { app: 'Library/Application Support/Firefox', hosts: 'Library/Application Support/Mozilla/NativeMessagingHosts' },
+    zen: { app: 'Library/Application Support/zen', hosts: 'Library/Application Support/zen/NativeMessagingHosts' },
+  },
+  linux: {
+    chrome: { app: '.config/google-chrome', hosts: '.config/google-chrome/NativeMessagingHosts' },
+    firefox: { app: '.mozilla', hosts: '.mozilla/native-messaging-hosts' },
+    zen: null,
+  },
+};
+
+function folders(browser: Browser): { app: string; hosts: string } {
+  const f = FOLDERS[platform()]?.[browser];
+  if (!f) throw new Error(`installing the helper for ${browser} on ${platform()} isn't supported yet`);
+  return { app: join(homedir(), f.app), hosts: join(homedir(), f.hosts) };
 }
+const manifestDir = (browser: Browser) => folders(browser).hosts;
+
+// The browsers with a profile on this machine, for a default install.
+export const detected = (): Browser[] => BROWSERS.filter(b => { try { return existsSync(folders(b).app); } catch { return false; } });
 
 const manifestPath = (browser: Browser) => join(manifestDir(browser), `${HOST_NAME}.json`);
 const binDir = () => join(dataDir(), 'bin');
@@ -56,6 +68,7 @@ export function install(browsers: Browser[]): string[] {
       description: 'Anno Tater helper: carries notes and replies between agents and the browser.',
       path,
       type: 'stdio',
+      // Firefox and Zen name the extension by its add-on id; Chrome by its extension origin.
       ...(browser === 'chrome' ? { allowed_origins: [`chrome-extension://${CHROME_ID}/`] } : { allowed_extensions: [FIREFOX_ID] }),
     };
     const file = manifestPath(browser);
@@ -68,8 +81,8 @@ export function install(browsers: Browser[]): string[] {
 export function uninstall(browsers: Browser[]): string[] {
   const removed = browsers.map(manifestPath).filter(existsSync);
   for (const file of removed) rmSync(file);
-  if (browsers.length === 2) for (const f of [launcherPath(), cliPath()]) rmSync(f, { force: true });
+  if (BROWSERS.every(b => !installed(b))) for (const f of [launcherPath(), cliPath()]) rmSync(f, { force: true });
   return removed;
 }
 
-export const installed = (browser: Browser) => existsSync(manifestPath(browser));
+export const installed = (browser: Browser) => { try { return existsSync(manifestPath(browser)); } catch { return false; } };
