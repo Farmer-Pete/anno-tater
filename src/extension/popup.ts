@@ -2,11 +2,8 @@
 import { ext, type PopupState, type Request } from './compat.ts';
 
 const root = document.getElementById('root') ?? document.body;
-// Firefox and its forks (Zen) report their name here; Chrome has no getBrowserInfo.
-async function geckoName(): Promise<string | null> {
-  const info = (ext.runtime as { getBrowserInfo?: () => Promise<{ name: string }> }).getBrowserInfo;
-  return info ? (await info()).name.toLowerCase() : null;
-}
+// Only Firefox and its forks have getBrowserInfo.
+const isGecko = () => 'getBrowserInfo' in ext.runtime;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, cls?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -46,7 +43,9 @@ async function render(): Promise<void> {
           void render();
         });
       });
-      row.append(el('span', `${p.title} (${new URL(p.url).hostname})`), allow);
+      const label = el('span', `${p.host} · ${p.titles.length} page${p.titles.length === 1 ? '' : 's'}`);
+      label.title = p.titles.join('\n');
+      row.append(label, allow);
       return row;
     })));
   }
@@ -81,10 +80,11 @@ async function render(): Promise<void> {
   const helper = state.helper === 'connected'
     ? [el('p', 'Two-way: your replies reach Claude.')]
     : [el('p', 'One-way: Claude can show notes, but replies need the helper. From the anno-tater folder, run:'), command('npm run tater -- install'), el('p', 'Then reopen this popup.', 'muted')];
-  const gecko = await geckoName();
-  if (gecko) {
-    const name = gecko === 'zen' ? 'zen' : 'firefox';
-    helper.push(el('p', 'So `tater open` can reach this browser, run once:', 'muted'), command(`npm run tater -- config ${name}-base ${ext.runtime.getURL('').replace(/\/$/, '')}`));
+  if (state.helper !== 'connected' && state.helperError) helper.push(el('p', `Helper error: ${state.helperError}`, 'muted'));
+  // Only no-helper mode needs the address; with the helper, `tater open` goes straight to the page.
+  if (isGecko() && state.helper !== 'connected') {
+    // Zen reports itself as Firefox, so Firefox-family browsers share one setting.
+    helper.push(el('p', 'So `tater open` can reach this browser, run once:', 'muted'), command(`npm run tater -- config firefox-base ${ext.runtime.getURL('').replace(/\/$/, '')}`));
   }
   root.append(section('Helper', ...helper));
 }

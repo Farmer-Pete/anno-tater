@@ -26,6 +26,6 @@ export type Request =
 export interface PopupState {
   helper: 'connected' | 'missing' | 'unknown';
   helperError: string;
-  needsAccess: { origin: string; title: string; url: string }[];
+  needsAccess: { origin: string; host: string; titles: string[] }[]; // one row per site, with its pages
   tabNotes: number | null; // notes on the active tab, or null when none are loaded
 }

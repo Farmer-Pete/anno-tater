@@ -26,7 +26,9 @@ function connectHelper(): void {
   }
   helper.onMessage.addListener(onHelper);
   helper.onDisconnect.addListener(() => {
-    helperError = ext.runtime.lastError?.message ?? 'the helper stopped';
+    // Chrome reports the reason in runtime.lastError; Firefox puts it on the port.
+    const gecko = (helper as { error?: { message: string } } | null)?.error;
+    helperError = ext.runtime.lastError?.message ?? gecko?.message ?? 'the helper stopped';
     helper = null;
     helperState = 'missing';
     for (const resolvers of waiting.values()) for (const r of resolvers) r(null);
@@ -141,7 +143,10 @@ async function needsAccess(): Promise<PopupState['needsAccess']> {
   const out = new Map<string, PopupState['needsAccess'][number]>();
   for (const p of all) {
     const origin = p.url ? originPattern(p.url) : null;
-    if (origin && !granted.has(origin) && !out.has(origin)) out.set(origin, { origin, title: p.title ?? p.match, url: p.url ?? '' });
+    if (!origin || granted.has(origin)) continue;
+    const row = out.get(origin) ?? { origin, host: new URL(p.url ?? '').hostname, titles: [] };
+    row.titles.push(p.title ?? p.match);
+    out.set(origin, row);
   }
   return [...out.values()];
 }

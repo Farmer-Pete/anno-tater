@@ -20,7 +20,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater status                              Pages, helper install state, and waiting messages
   tater install [--browser B]               Register the helper with your browsers (needed for replies)
   tater uninstall [--browser B]
-  tater config <firefox|zen>-base <moz-extension://...>   The extension's address there (its popup shows the command)
+  tater config firefox-base <moz-extension://...>   The extension's address in Firefox or Zen (its popup shows the command)
 
   B is chrome, firefox, or zen (install: every browser found; open: chrome). Data lives in ${dataDir()}.`;
 
@@ -118,7 +118,7 @@ async function openPage(notes: NotesFile, browser: Browser): Promise<string> {
   }
   const base = browser === 'chrome'
     ? `chrome-extension://${CHROME_ID}`
-    : readConfig()[`${browser}-base`] ?? fail(`${APPS[browser]} needs its extension address once: open the Anno Tater popup there and run the command it shows`);
+    : readConfig()['firefox-base'] ?? fail(`${APPS[browser]} needs its extension address once: open the Anno Tater popup there and run the command it shows`);
   const url = `${base}/open.html#${await encodeFragment(notes, target)}`;
   openUrl(url, browser);
   return `opened ${target} through the extension (one-way: install the helper for replies)`;
@@ -187,7 +187,7 @@ switch (values.help ? 'help' : command) {
     break;
   case 'config': {
     const [key = '', value = ''] = args;
-    if (!/^(firefox|zen)-base$/.test(key) || !value.startsWith('moz-extension://')) fail('usage: tater config <firefox|zen>-base moz-extension://<id>');
+    if (key !== 'firefox-base' || !value.startsWith('moz-extension://')) fail('usage: tater config firefox-base moz-extension://<id>  (Firefox and Zen share it)');
     writeConfig(key, value.replace(/\/+$/, ''));
     console.log('saved');
     break;

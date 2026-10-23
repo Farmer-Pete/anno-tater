@@ -11,12 +11,13 @@ export const BROWSERS = ['chrome', 'firefox', 'zen'] as const;
 export type Browser = (typeof BROWSERS)[number];
 
 // Each browser's profile folder, and where it reads per-user host manifests. Zen (a Firefox fork)
-// reads its own folder, not Mozilla's. Windows uses the registry instead and isn't supported yet.
+// reads Mozilla's folder like Firefox does (zen-browser/desktop#13214), so the two share one
+// manifest. Windows uses the registry instead and isn't supported yet.
 const FOLDERS: Partial<Record<NodeJS.Platform, Record<Browser, { app: string; hosts: string } | null>>> = {
   darwin: {
     chrome: { app: 'Library/Application Support/Google/Chrome', hosts: 'Library/Application Support/Google/Chrome/NativeMessagingHosts' },
     firefox: { app: 'Library/Application Support/Firefox', hosts: 'Library/Application Support/Mozilla/NativeMessagingHosts' },
-    zen: { app: 'Library/Application Support/zen', hosts: 'Library/Application Support/zen/NativeMessagingHosts' },
+    zen: { app: 'Library/Application Support/zen', hosts: 'Library/Application Support/Mozilla/NativeMessagingHosts' },
   },
   linux: {
     chrome: { app: '.config/google-chrome', hosts: '.config/google-chrome/NativeMessagingHosts' },
