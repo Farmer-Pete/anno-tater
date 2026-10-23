@@ -11,7 +11,6 @@
     "tater": "node --disable-warning=ExperimentalWarning src/cli/tater.ts",
     "test": "node --test",
     "check": "tsc && tsc -p src/extension && oxlint --deny-warnings && knip && jscpd --exit-code --reporters console src && sh scripts/no-suppressions.sh && node --test && node scripts/build.ts",
-    "sign:firefox": "node scripts/build.ts && node scripts/sign-firefox.ts",
     "release": "node scripts/release.ts"
   },
   "engines": {

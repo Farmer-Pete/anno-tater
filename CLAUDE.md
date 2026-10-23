@@ -1,6 +1,6 @@
 # Anno Tater
 
-A Chrome and Firefox extension that draws an agent's notes on any web page, plus the agent side (`tater` CLI, native messaging helper, and Claude Code skill). Design and data flow: [docs/design.md](docs/design.md). Notes format: [skill/reference.md](skill/reference.md).
+A browser extension (Chrome, Zen, Firefox Developer Edition) that draws an agent's notes on any web page, plus the agent side (`tater` CLI, native messaging helper, and Claude Code skill). Design and data flow: [docs/design.md](docs/design.md). Notes format: [skill/reference.md](skill/reference.md).
 
 ## Layout
 
@@ -17,12 +17,11 @@ A Chrome and Firefox extension that draws an agent's notes on any web page, plus
 ## Commands
 
 - `npm run check`: types, lint, dead code, duplication, suppression scan, tests, build. The pre-commit hook runs it; turn the hook on with `git config core.hooksPath .githooks`.
-- `npm run build`: `dist/chrome`, `dist/firefox`, and `skill/bin`.
+- `npm run build`: `dist/chrome`, `dist/firefox` and its unsigned `dist/anno-tater.xpi`, and `skill/bin`.
 - `./install.sh`: build, then install the skill and helper on this machine.
-- `npm run sign:firefox`: sign `dist/firefox` on addons.mozilla.org as unlisted. Needs `~/.amo.token`. AMO refuses a version number twice, so bump `package.json` first.
-- `npm run release`: publish GitHub release `v<version>` with the files `install.sh` downloads. Needs the signed build.
+- `npm run release`: publish GitHub release `v<version>` with the files `install.sh` downloads. Bump `package.json`'s version first.
 
-Signing and releasing publish outside this machine: confirm with the person first.
+Releasing publishes outside this machine: confirm with the person first.
 
 ## How it fits together
 
@@ -34,5 +33,5 @@ Signing and releasing publish outside this machine: confirm with the person firs
 ## Testing in a browser
 
 - Chrome: load `dist/chrome` unpacked. The manifest `key` fixes the ID to `pnonheeknfhclnmokcollijaflmhppdc`.
-- Firefox or Zen: `about:debugging`, Load Temporary Add-on, `dist/firefox/manifest.json`. Zen reads helper manifests from Mozilla's folder and reports itself as Firefox.
+- Zen or Firefox Developer Edition: set `xpinstall.signatures.required` to `false` in `about:config`, then open `dist/anno-tater.xpi`; or load `dist/firefox/manifest.json` as a temporary add-on from `about:debugging`. Regular Firefox ignores that setting, so it's unsupported. Zen reads helper manifests from Mozilla's folder and reports itself as Firefox.
 - After a rebuild, reload the extension in each browser.

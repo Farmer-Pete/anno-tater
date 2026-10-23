@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs Anno Tater: the Claude Code skill, the helper that carries replies, and the browser
-# extensions for Chrome, Firefox, and Zen.
+# extension for Chrome, Zen, and Firefox Developer Edition.
 #
 # From a clone:  ./install.sh                 (builds first; needs Node 26 and npm)
 # Without one:   curl -fsSL https://raw.githubusercontent.com/Farmer-Pete/anno-tater/main/install.sh | sh
@@ -25,9 +25,7 @@ if [ -f package.json ] && grep -q '"name": "anno-tater"' package.json; then
   SRC=$(pwd)
   SKILL_SRC=$SRC/skill
   CHROME_SRC=$SRC/dist/chrome
-  FIREFOX_SRC=$SRC/dist/firefox
-  XPI=$SRC/dist/anno-tater-$(node -p 'require("./package.json").version').xpi # written by npm run sign:firefox
-  [ -f "$XPI" ] || XPI=
+  XPI=$SRC/dist/anno-tater.xpi
 else
   say "Downloading the latest release"
   SRC=$(mktemp -d)
@@ -36,12 +34,10 @@ else
   curl -fsSL "$base/anno-tater-skill.tar.gz" | tar -xz -C "$SRC"
   curl -fsSL -o "$SRC/chrome.zip" "$base/anno-tater-chrome.zip"
   mkdir -p "$SRC/chrome" && (cd "$SRC/chrome" && unzip -q ../chrome.zip)
-  curl -fsSL -o "$SRC/anno-tater.xpi" "$base/anno-tater.xpi" || true
+  curl -fsSL -o "$SRC/anno-tater.xpi" "$base/anno-tater.xpi"
   SKILL_SRC=$SRC/skill
   CHROME_SRC=$SRC/chrome
-  FIREFOX_SRC=
   XPI=$SRC/anno-tater.xpi
-  [ -s "$XPI" ] || XPI=
 fi
 
 # ---------- the Claude Code skill ----------
@@ -60,22 +56,21 @@ open_in() { # bundle id (macOS) or binary (Linux), then the target
   if [ "$(uname)" = Darwin ]; then open -b "$1" "$3"; else "$2" "$3" >/dev/null 2>&1 & fi
 }
 has_profile() { [ -d "$HOME/$1" ] || [ -d "$HOME/$2" ]; }
+has_app() { # macOS app name or Linux binary
+  if [ "$(uname)" = Darwin ]; then [ -d "/Applications/$1.app" ]; else command -v "$2" >/dev/null 2>&1; fi
+}
 
-for gecko in "Firefox:org.mozilla.firefox:firefox:Library/Application Support/Firefox:.mozilla/firefox" \
-             "Zen:app.zen-browser.zen:zen:Library/Application Support/zen:.zen"; do
-  name=${gecko%%:*}; rest=${gecko#*:}; bundle=${rest%%:*}; rest=${rest#*:}; bin=${rest%%:*}; rest=${rest#*:}
-  mac=${rest%%:*}; linux=${rest#*:}
-  has_profile "$mac" "$linux" || continue
+# Zen and Firefox Developer Edition run the unsigned add-on once signature checks are off.
+# Regular Firefox can't, so it isn't offered.
+for gecko in "Zen:app.zen-browser.zen:zen" "Firefox Developer Edition:org.mozilla.firefoxdeveloperedition:firefox-developer-edition"; do
+  name=${gecko%%:*}; rest=${gecko#*:}; bundle=${rest%%:*}; bin=${rest#*:}
+  has_app "$name" "$bin" || continue
   say "$name"
-  if [ -n "$XPI" ]; then
-    open_in "$bundle" "$bin" "$XPI"
-    echo "  $name is asking to add Anno Tater. Click Add."
-  elif [ -n "$FIREFOX_SRC" ]; then
-    echo "  No signed build yet, so $name can only load it until it restarts:"
-    echo "  about:debugging > This Firefox > Load Temporary Add-on > $FIREFOX_SRC/manifest.json"
-  else
-    echo "  This release has no signed Firefox build. Skipping $name."
-  fi
+  echo "  $name only installs unsigned add-ons with signature checks off:"
+  echo "    1. In $name, open about:config and set xpinstall.signatures.required to false."
+  printf '    2. Press Enter here, and %s will ask to add Anno Tater. Click Add. ' "$name"
+  read -r _ </dev/tty || true
+  open_in "$bundle" "$bin" "$XPI"
 done
 
 if has_profile "Library/Application Support/Google/Chrome" ".config/google-chrome"; then

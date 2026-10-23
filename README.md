@@ -22,4 +22,4 @@ cd anno-tater
 ./install.sh
 ```
 
-Works with Chrome, Firefox, and Zen, and needs Node 20 or newer.
+Works with Chrome, Zen, and Firefox Developer Edition, and needs Node 20 or newer. Regular Firefox won't run unsigned add-ons, so it isn't supported.

@@ -1,5 +1,7 @@
-// Builds the extension for Chrome and Firefox into dist/<browser>/.
+// Builds the extension into dist/chrome and dist/firefox (for Zen and Firefox Developer Edition,
+// zipped as dist/anno-tater.xpi), and the skill's bundled tater and helper into skill/bin.
 // esbuild bundles each entry point; the manifest is the base plus the browser's overrides.
+import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build } from 'esbuild';
@@ -27,6 +29,12 @@ for (const browser of ['chrome', 'firefox'] as const) {
   cpSync(join('src', 'extension', 'static'), out, { recursive: true });
   cpSync('icons', join(out, 'icons'), { recursive: true });
 }
+// An unsigned .xpi: Zen and Firefox Developer Edition install it once
+// xpinstall.signatures.required is false. -X leaves out macOS extended attributes.
+const xpi = join(process.cwd(), 'dist', 'anno-tater.xpi');
+rmSync(xpi, { force: true });
+execFileSync('zip', ['-r', '-X', '-q', xpi, '.'], { cwd: join('dist', 'firefox') });
+
 // The agent side for the skill: tater and the helper as plain JavaScript that runs on Node 20+,
 // so installing the skill needs no clone and no Node 26.
 await build({
@@ -41,4 +49,4 @@ await build({
   legalComments: 'none',
   logLevel: 'warning',
 });
-console.log('built dist/chrome, dist/firefox, and skill/bin');
+console.log('built dist/chrome, dist/firefox, dist/anno-tater.xpi, and skill/bin');

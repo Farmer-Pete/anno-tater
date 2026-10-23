@@ -138,14 +138,14 @@ test('a question on a page without notes reaches --all, and the answer starts it
   });
 });
 
-test('tater finds the extension address Firefox and Zen store in prefs.js', () => {
+test('tater finds the extension address Zen and Firefox store in prefs.js', () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'anno-tater-home-'));
   const zen = join(fakeHome, 'Library/Application Support/zen');
   execFileSync('mkdir', ['-p', join(zen, 'Profiles', 'abc.Default')]);
   writeFileSync(join(zen, 'installs.ini'), '[X]\nDefault=Profiles/abc.Default\n');
   const uuids = JSON.stringify(JSON.stringify({ 'other@x': '1', 'anno-tater@farmerpete': 'uuid-123' }));
   writeFileSync(join(zen, 'Profiles', 'abc.Default', 'prefs.js'), `user_pref("extensions.webextensions.uuids", ${uuids});\n`);
-  const script = "import('./src/host/browsers.ts').then(m => console.log(m.geckoBase('zen'), m.geckoBase('firefox')))";
+  const script = "import('./src/host/browsers.ts').then(m => console.log(m.geckoBase('zen'), m.geckoBase('firefox-dev')))";
   const out = execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', '-e', script], { env: { ...process.env, HOME: fakeHome }, encoding: 'utf8' });
   assert.equal(out.trim(), 'moz-extension://uuid-123 null');
 });

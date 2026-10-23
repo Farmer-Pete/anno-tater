@@ -7,7 +7,7 @@ Anno Tater lets a coding agent such as Claude Code mark up any web page for a pe
 - **Cheap for the agent.** The agent writes a notes file once. The extension does the anchoring and drawing. A reply from the page reaches the agent as one short line, never as the page.
 - **Marks that stay.** Highlights survive reloads and pages that re-render their own DOM.
 - **Least privilege.** The extension runs only on sites the person allowed, one click per site.
-- **Chrome and Firefox** from one code base.
+- **Chrome, Zen, and Firefox Developer Edition** from one code base. Firefox-based browsers run it unsigned (`xpinstall.signatures.required = false`); regular Firefox ignores that setting and isn't supported.
 - **Works without installing anything else.** Without the helper, notes still reach the page. Replies need the helper.
 
 ## Pieces
@@ -42,7 +42,7 @@ flowchart TB
 
 `tater open` could put the notes in the target page's own fragment. The fragment never reaches the site's server, but the site's scripts could read it on a domain the extension can't run on yet, and seeing that URL at all needs the "tabs" permission ("Read your browsing history"). Instead `tater open` opens the extension's own `open.html` with the notes in its fragment. That page stores them, asks for site access if needed (the click there counts as the required user gesture), and then sends the browser on to the target page.
 
-Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known in advance. Firefox and Zen give each install a random internal host name; `tater` reads it from the profile's `prefs.js` (`extensions.webextensions.uuids`).
+Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known in advance. Zen and Firefox Developer Edition give each install a random internal host name; `tater` reads it from the profile's `prefs.js` (`extensions.webextensions.uuids`).
 
 ## Notes file
 
@@ -81,7 +81,7 @@ A page's address, without the scheme or the `#fragment`, keys everything:
 | `state/<page>.json` | Ticked steps and read replies | every browser (two-way mode) |
 | `inbox/<page>.jsonl` | The person's messages | every browser |
 
-So a page looks the same in Chrome, Firefox, and Zen, and a step ticked in one shows as ticked in the others. Each browser starts its own helper; all of them share the data folder and watch it, so a change made through one browser reaches the others. Hidden or shown and "Block site shortcuts" stay per browser, as view settings. Without the helper, a browser keeps its own copy of the page state.
+So a page looks the same in Chrome, Zen, and Firefox Developer Edition, and a step ticked in one shows as ticked in the others. Each browser starts its own helper; all of them share the data folder and watch it, so a change made through one browser reaches the others. Hidden or shown and "Block site shortcuts" stay per browser, as view settings. Without the helper, a browser keeps its own copy of the page state.
 
 The trade-off is deliberate: two agent sessions on the same page replace each other's notes and share its replies. Sessions on different pages never cross. "Ask Claude about this page" on a page without notes lands in that page's inbox; `tater watch --all` shows it, and the answer starts the page's notes file.
 
@@ -90,6 +90,6 @@ The trade-off is deliberate: two agent sessions on the same page replace each ot
 Each message is a 4-byte little-endian length followed by UTF-8 JSON. The browser caps a message to the extension at 1 MB. `tater install` writes the host manifest to:
 
 - Chrome: `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/`
-- Firefox and Zen: `~/Library/Application Support/Mozilla/NativeMessagingHosts/` (Zen reads Mozilla's folder, zen-browser/desktop#13214)
+- Zen and Firefox Developer Edition: `~/Library/Application Support/Mozilla/NativeMessagingHosts/` (Zen reads Mozilla's folder, zen-browser/desktop#13214)
 
 It also writes a launcher script with the absolute path to `node`, because apps started from the Dock don't get the shell's PATH.

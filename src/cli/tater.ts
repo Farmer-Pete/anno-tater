@@ -20,7 +20,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater uninstall [--browser B]
 
   A page's URL is its key: one notes file and one conversation per page, in every browser.
-  B is chrome, firefox, or zen (install: every browser found; open: the default browser).
+  B is chrome, zen, or firefox-dev (install: every browser found; open: the default browser).
   Data lives in ${dataDir()}.`;
 
 const fail = (message: string): never => { console.error(message); process.exit(1); };

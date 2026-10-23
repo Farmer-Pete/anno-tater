@@ -6,7 +6,9 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { FIREFOX_ID } from '../shared/protocol.ts';
 
-export const BROWSERS = ['chrome', 'firefox', 'zen'] as const;
+// Firefox-based browsers must allow unsigned add-ons (xpinstall.signatures.required = false), which
+// Zen and Firefox Developer Edition do and regular Firefox doesn't, so regular Firefox isn't listed.
+export const BROWSERS = ['chrome', 'zen', 'firefox-dev'] as const;
 export type Browser = (typeof BROWSERS)[number];
 export const isBrowser = (b: string): b is Browser => (BROWSERS as readonly string[]).includes(b);
 
@@ -27,18 +29,19 @@ const INFO: Record<Browser, Info> = {
       linux: { profile: '.config/google-chrome', hosts: '.config/google-chrome/NativeMessagingHosts' },
     },
   },
-  firefox: {
-    name: 'Firefox', macBundle: 'org.mozilla.firefox', linuxDesktop: 'firefox.desktop', linuxBinary: 'firefox',
-    dirs: {
-      darwin: { profile: 'Library/Application Support/Firefox', hosts: 'Library/Application Support/Mozilla/NativeMessagingHosts' },
-      linux: { profile: '.mozilla/firefox', hosts: '.mozilla/native-messaging-hosts' },
-    },
-  },
   zen: {
     name: 'Zen', macBundle: 'app.zen-browser.zen', linuxDesktop: 'zen.desktop', linuxBinary: 'zen',
     dirs: {
       darwin: { profile: 'Library/Application Support/zen', hosts: 'Library/Application Support/Mozilla/NativeMessagingHosts' },
       linux: { profile: '.zen', hosts: '.mozilla/native-messaging-hosts' },
+    },
+  },
+  'firefox-dev': {
+    name: 'Firefox Developer Edition', macBundle: 'org.mozilla.firefoxdeveloperedition',
+    linuxDesktop: 'firefox-developer-edition.desktop', linuxBinary: 'firefox-developer-edition',
+    dirs: {
+      darwin: { profile: 'Library/Application Support/Firefox', hosts: 'Library/Application Support/Mozilla/NativeMessagingHosts' },
+      linux: { profile: '.mozilla/firefox', hosts: '.mozilla/native-messaging-hosts' },
     },
   },
 };
