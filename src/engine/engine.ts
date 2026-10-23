@@ -7,7 +7,8 @@
 import { autoUpdate, computePosition, flip, offset, shift, type VirtualElement } from '@floating-ui/dom';
 import { getBoxToBoxArrow } from 'perfect-arrows';
 import { annotate } from 'rough-notation';
-import { comparableUrl, norm, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { norm, pageKey as keyOf, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import type { PageState } from '../shared/protocol.ts';
 import { anchor, buildIndex, context, findTerms } from './anchor.ts';
 import { h, inline, md, svg } from './dom.ts';
 import { POTATO } from './potato.ts';
@@ -21,8 +22,15 @@ export interface Store {
 
 export type Draft = Pick<Outgoing, 'kind' | 'noteId' | 'quote' | 'prefix' | 'suffix' | 'text'>;
 
+// What the page shares across browsers (through the helper), plus the messages still waiting.
+interface Loaded {
+  twoWay: boolean;
+  state: PageState;
+  pending: Outgoing[];
+}
+
 export interface Engine {
-  load(notes: NotesFile | null, twoWay: boolean): void;
+  load(notes: NotesFile | null, loaded: Loaded): void;
   setDelivered(ids: string[]): void;
   setTwoWay(on: boolean): void;
   setHidden(on: boolean): void;
@@ -36,12 +44,11 @@ type RoughAnnotationConfig = Parameters<typeof annotate>[1];
 interface Placed { note: Note; range: Range; ambiguous: boolean }
 interface TermHit { term: Term; range: Range }
 interface Mark { p: Placed; proxy: HTMLDivElement; ann: RoughAnnotation; last: string }
-type Pending = Outgoing & { pending: true };
 
 const kindOf = (n: Note) => KINDS[n.kind] ?? KINDS.info;
 // Per-page UI state is keyed by the page's URL: with several channels on a page, no single notes
 // file names it.
-const pageKey = (k: string) => `page:${comparableUrl(location.href)}:${k}`;
+const pageKey = (k: string) => `page:${keyOf(location.href)}:${k}`;
 const isEditable = (el: EventTarget | undefined) =>
   el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
@@ -82,7 +89,9 @@ function potatoIcon(): SVGSVGElement {
 
 const label = (n: Note) => (n.kind === 'step' ? `Step ${n.step}` : kindOf(n).label);
 
-export function createEngine(store: Store, send: (draft: Draft) => Outgoing): Engine {
+// store keeps this browser's view settings; send and saveState go to the helper (or, without it,
+// to this browser's storage) through the content script.
+export function createEngine(store: Store, send: (draft: Draft) => Outgoing, saveState: (patch: Partial<PageState>) => void): Engine {
   let data: NotesFile | null = null;
   let twoWay = false;
   let placed: Placed[] = [];
@@ -96,15 +105,25 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing): En
   let dead = false, started = false;
   let activeHighlight: Highlight | null = null;
 
-  // Per-page settings are keyed by the notes file's match; shortcut blocking and the panel are global.
+  // View settings stay in this browser: hidden is per page, shortcut blocking and the panel are global.
   const hidden = () => store.get(pageKey('hidden'), false);
   const blockKeys = () => store.get('block-keys', true);
   const panelOpen = () => store.get('panel-open', true);
-  const isDone = (id: string) => store.get<Record<string, boolean>>(pageKey('done'), {})[id] ?? false;
-  const setDone = (id: string, on: boolean) => store.set(pageKey('done'), { ...store.get<Record<string, boolean>>(pageKey('done'), {}), [id]: on });
+  // Ticked steps and read replies are shared by every browser that shows this page.
+  let state: PageState = { done: {} };
+  const isDone = (id: string) => state.done[id] ?? false;
+  function setDone(id: string, on: boolean): void {
+    state = { ...state, done: { ...state.done, [id]: on } };
+    saveState({ done: { [id]: on } });
+  }
   const acked = () => new Set(data?.acked ?? []);
-  // Messages sent but not yet answered. Kept locally so the card can show them until the agent acks.
-  const outbox = () => store.get<Pending[]>(pageKey('outbox'), []).filter(m => !acked().has(m.id));
+  // Messages waiting for an answer: the helper's list, plus ones sent since it was last read.
+  let pending: Outgoing[] = [];
+  let sentSince: Outgoing[] = [];
+  const outbox = () => {
+    const ids = new Set(pending.map(m => m.id));
+    return [...pending, ...sentSince.filter(m => !ids.has(m.id))].filter(m => !acked().has(m.id));
+  };
 
   // ---------- host element, styles ----------
   const pageSheet = new CSSStyleSheet();
@@ -161,23 +180,25 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing): En
   // ---------- unread replies ----------
   // A reply is "<noteId>#<index in thread>"; it's unread until its note's card is opened.
   function seen(): Set<string> {
-    let s = store.get<string[] | null>(pageKey('seen'), null);
-    if (!s) { s = (data?.notes ?? []).flatMap(claudeKeys); store.set(pageKey('seen'), s); } // first visit: nothing is new
-    return new Set(s);
+    if (!state.seen) { // the page's first showing anywhere: nothing is new yet
+      state = { ...state, seen: (data?.notes ?? []).flatMap(claudeKeys) };
+      saveState({ seen: state.seen });
+    }
+    return new Set(state.seen);
   }
   const unreadNotes = () => { const s = seen(); return (data?.notes ?? []).filter(n => claudeKeys(n).some(k => !s.has(k))); };
   function markSeen(n: Note): boolean {
     const s = seen(), keys = claudeKeys(n);
     if (keys.every(k => s.has(k))) return false;
     keys.forEach(k => s.add(k));
-    store.set(pageKey('seen'), [...s]);
+    state = { ...state, seen: [...s] };
+    saveState({ seen: state.seen });
     return true;
   }
 
   // ---------- sending ----------
   function sendDraft(draft: Draft): void {
-    const message = send(draft);
-    store.set(pageKey('outbox'), [...outbox(), { ...message, pending: true }]);
+    sentSince = [...sentSince, send(draft)];
     renderPanel();
   }
   const pendingLabel = (id: string) => (delivered.has(id) ? 'Claude has it, reply coming' : 'Sent, waiting for Claude to pick it up');
@@ -564,9 +585,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing): En
   const onResize = () => { for (const m of marks) m.last = ''; layout(); };
 
   return {
-    load(notes, twoWayNow) {
+    load(notes, loaded) {
       data = notes;
-      twoWay = twoWayNow;
+      twoWay = loaded.twoWay;
+      state = loaded.state;
+      pending = loaded.pending;
+      sentSince = sentSince.filter(m => !pending.some(p => p.id === m.id));
       if (started) render();
     },
     setDelivered(ids) {

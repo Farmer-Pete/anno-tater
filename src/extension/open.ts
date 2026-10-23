@@ -23,8 +23,9 @@ async function main(): Promise<void> {
   history.replaceState(null, '', location.pathname);
   if (!fragment) { say('Nothing to open. This page is used by `tater open`.'); return; }
 
-  const { target, notes } = await decodeFragment(fragment);
-  await saveLocalPage({ ...notes, url: notes.url ?? target });
+  const notes = await decodeFragment(fragment);
+  const target = notes.url;
+  await saveLocalPage(notes);
   const origin = originPattern(target);
   if (!origin || (await ext.permissions.contains({ origins: [origin] }))) { location.replace(target); return; }
 

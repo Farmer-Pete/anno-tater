@@ -2,7 +2,6 @@
 
 ```json
 {
-  "match": "github.com/org/repo/blob/main/docs/design.md",
   "url": "https://github.com/org/repo/blob/main/docs/design.md",
   "title": "Design review",
   "scope": "article.markdown-body",
@@ -21,10 +20,8 @@
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `match` | yes | Part of the page URL, without scheme or `#fragment`. The longest match wins when several files fit a URL. |
-| `url` | for `open` | The page to open. Must contain `match`. Also tells the extension which site needs access. |
+| `url` | yes | The page. Its address without `https://` or `#…` is the key: one notes file, one shared state, and one conversation per page. It also tells the extension which site needs access. |
 | `title` | no | Shown in the panel header. |
-| `channel` | set by tater | Your inbox, a random UUID. `tater open` / `push` create one and write it here; keep it so later pushes update the same notes. |
 | `scope` | no | CSS selector for the page's main content (`article.markdown-body` on GitHub). Quotes and terms outside it are ignored, which keeps nav bars and sidebars out. Default: `main`, else `body`. |
 | `notes` | yes | The notes, below. |
 | `links` | no | Arrows between two notes, drawn down the left margin: `from`, `to` (note ids), optional `label`. |

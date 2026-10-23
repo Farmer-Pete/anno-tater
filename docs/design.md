@@ -48,9 +48,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 
 ```json
 {
-  "match": "github.com/org/repo/blob/main/docs/design.md",
   "title": "Design review",
-  "channel": "3f2c9e4a-…",
   "scope": "article.markdown-body",
   "notes": [
     { "id": "n1", "kind": "issue", "quote": "exact text on the page", "prefix": "optional", "suffix": "optional",
@@ -62,8 +60,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 }
 ```
 
-- `match` is a substring of the page URL.
-- `channel` is the agent session's inbox: a random UUID that `tater` creates on the first `open` or `push` and writes back into the agent's file. `tater watch --channel <id>` prints that inbox.
+- `url` is the page. Its address without the scheme or `#fragment` is the page key.
 - `kind` is one of `issue`, `caution`, `agree`, `info`, `step`. Steps also have `step: <number>`.
 - `decorate` is one of `box`, `circle`, `underline`, `bracket`.
 - Anchoring follows the W3C TextQuoteSelector: an exact quote with optional prefix and suffix. A quote that isn't found goes in the panel's "Couldn't place" list. Nothing is placed by a guess.
@@ -74,13 +71,19 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 - Cards, the panel, pins, and SVG arrows live in one Shadow DOM host, so page CSS and our CSS don't touch.
 - Keys typed in our UI never reach the page. From the page's side they look like they come from a plain element, so its shortcuts would fire. A "Block site shortcuts" toggle (on by default) also blocks the page's shortcuts outside its own text fields.
 
-## Several browsers and sessions
+## Pages are the key
 
-Each agent session works in its own **channel**, a random UUID that `tater` creates. Notes live in `pages/<channel>/<page>.json` and replies in `inbox/<channel>.jsonl`, so nothing an agent names can collide.
+A page's address, without the scheme or the `#fragment`, keys everything:
 
-- **Several channels on one page.** Each channel's file for a page is a layer. The background fetches every layer (per channel, the most specific `match`), and the content script merges them: note ids are namespaced by channel, glossaries and acks are unioned, and a map remembers which channel and file wrote each note. A reply or a ticked step goes to that note's channel. A question about plain text goes to the newest layer's channel.
-- **Several browsers.** Each browser starts its own helper; all share the data folder. Inboxes and receipts (`delivered.jsonl`) are append-only, so concurrent writers don't overwrite each other.
-- **A page with no notes.** "Ask Claude about this page" sends the question to the channel that most recently wrote notes anywhere.
+| File | What | Shared by |
+| --- | --- | --- |
+| `pages/<page>.json` | The notes | every browser |
+| `state/<page>.json` | Ticked steps and read replies | every browser (two-way mode) |
+| `inbox/<page>.jsonl` | The person's messages | every browser |
+
+So a page looks the same in Chrome, Firefox, and Zen, and a step ticked in one shows as ticked in the others. Each browser starts its own helper; all of them share the data folder and watch it, so a change made through one browser reaches the others. Hidden or shown and "Block site shortcuts" stay per browser, as view settings. Without the helper, a browser keeps its own copy of the page state.
+
+The trade-off is deliberate: two agent sessions on the same page replace each other's notes and share its replies. Sessions on different pages never cross. "Ask Claude about this page" on a page without notes lands in that page's inbox; `tater watch --all` shows it, and the answer starts the page's notes file.
 
 ## Native messaging
 

@@ -1,18 +1,16 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { decoder, encode, MAX_TO_BROWSER } from '../src/host/framing.ts';
-import type { NotesFile, Outgoing } from '../src/shared/notes.ts';
+import { pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
 import type { FromHost } from '../src/shared/protocol.ts';
 
 const home = () => mkdtempSync(join(tmpdir(), 'anno-tater-'));
 const tater = (dir: string, ...args: string[]) =>
   execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/cli/tater.ts', ...args], { env: { ...process.env, ANNO_TATER_HOME: dir }, encoding: 'utf8' });
-const channelIn = (output: string) => /channel ([0-9a-f-]{36})/.exec(output)?.[1] ?? '';
-const readJson = (file: string) => JSON.parse(readFileSync(file, 'utf8')) as NotesFile;
 
 test('framing round-trips messages split across chunks', () => {
   const got: unknown[] = [];
@@ -27,16 +25,18 @@ test('framing refuses messages over the browser limit', () => {
 });
 
 const notes: NotesFile = {
-  match: 'example.com/page', url: 'https://example.com/page',
+  url: 'https://example.com/page',
   notes: [{ id: 'n1', kind: 'issue', quote: 'some text', title: 'A problem' }],
 };
+const page = pageKey(notes.url);
 
-// Writes a notes file to a fresh data folder and pushes it, returning the folder, the file, and its new channel.
-function pushed(extra: Partial<NotesFile> = {}) {
+// Writes a notes file to a fresh data folder and pushes it.
+function pushed() {
   const dir = home();
   const file = join(dir, 'notes.json');
-  writeFileSync(file, JSON.stringify({ ...notes, ...extra }));
-  return { dir, file, channel: channelIn(tater(dir, 'push', file)) };
+  writeFileSync(file, JSON.stringify(notes));
+  const out = tater(dir, 'push', file);
+  return { dir, file, out };
 }
 
 // Runs the helper as the browser would and collects what it writes back.
@@ -52,77 +52,96 @@ function host(dir: string) {
     }
     throw new Error(`no ${type} message`);
   };
-  return { child, waitFor, send: (m: unknown) => child.stdin.write(encode(m)) };
+  const get = async () => {
+    child.stdin.write(encode({ type: 'get', page }));
+    const m = await waitFor('page');
+    return m.type === 'page' ? m : null;
+  };
+  return { child, waitFor, get, send: (m: unknown) => child.stdin.write(encode(m)) };
 }
 
-test('push creates a channel and writes it into the notes file, so the next push reuses it', () => {
-  const { dir, file, channel } = pushed();
-  assert.match(channel, /^[0-9a-f]{8}-/);
-  assert.equal(readJson(file).channel, channel);
-  assert.equal(channelIn(tater(dir, 'push', file)), channel);
-  assert.throws(() => tater(dir, 'push', file, '--channel', 'not-a-channel'));
+test('push says where replies arrive, and keeps threads the agent copy lacks', () => {
+  const { dir, file, out } = pushed();
+  assert.match(out, /replies: tater watch --page https:\/\/example\.com\/page/);
+  assert.match(tater(dir, 'status'), /page: https:\/\/example\.com\/page \(1 notes\)/);
+  tater(dir, 'push', file); // a second push of the same page replaces the first: one file per page
+  assert.equal((tater(dir, 'status').match(/page: /g) ?? []).length, 1);
 });
 
 test('helper, CLI and inbox work end to end', async () => {
-  const { dir, channel } = pushed();
+  const { dir } = pushed();
   const h = host(dir);
   try {
     const hello = await h.waitFor('hello');
-    assert.deepEqual(hello.type === 'hello' && [hello.pages[0]?.channel, hello.pages[0]?.match], [channel, notes.match]);
+    assert.deepEqual(hello.type === 'hello' && [hello.pages[0]?.page, hello.pages[0]?.url], [page, notes.url]);
+    assert.equal((await h.get())?.notes?.notes[0]?.id, 'n1');
 
-    h.send({ type: 'get', channel, match: notes.match });
-    const got = await h.waitFor('notes');
-    assert.equal(got.type === 'notes' && got.notes?.notes[0]?.id, 'n1');
-
-    const message: Outgoing = { id: 'm1', at: '', page: notes.url ?? '', match: notes.match, channel, kind: 'reply', noteId: 'n1', text: 'why?' };
+    const message: Outgoing = { id: 'm1', at: '', page, url: notes.url, kind: 'reply', noteId: 'n1', text: 'why?' };
     h.send({ type: 'send', message });
     await h.waitFor('sent');
+    assert.deepEqual((await h.get())?.pending.map(m => m.id), ['m1']); // every browser sees it waiting
 
     // The agent picks it up: watch prints it and marks it delivered, which the helper reports.
-    const line = JSON.parse(tater(dir, 'watch', '--channel', channel, '--once').trim()) as Outgoing;
+    const line = JSON.parse(tater(dir, 'watch', '--page', notes.url, '--once').trim()) as Outgoing;
     assert.deepEqual([line.id, line.text], ['m1', 'why?']);
     const delivered = await h.waitFor('delivered');
     assert.deepEqual(delivered.type === 'delivered' && delivered.ids, ['m1']);
 
-    // The agent answers: the thread grows, the message is acked, and the helper announces the change.
+    // The agent answers: the thread grows, the message is acked, and nothing waits any more.
     assert.match(tater(dir, 'reply', 'm1', 'because'), /answered on n1/);
     await h.waitFor('pages');
-    h.send({ type: 'get', channel, match: notes.match });
-    const after = await h.waitFor('notes');
-    const page = after.type === 'notes' ? after.notes : null;
-    assert.deepEqual(page?.notes[0]?.thread, [{ from: 'you', text: 'why?' }, { from: 'claude', text: 'because' }]);
-    assert.deepEqual(page?.acked, ['m1']);
-    assert.equal(tater(dir, 'watch', '--channel', channel, '--once').trim(), '');
+    const after = await h.get();
+    assert.deepEqual(after?.notes?.notes[0]?.thread, [{ from: 'you', text: 'why?' }, { from: 'claude', text: 'because' }]);
+    assert.deepEqual(after?.pending, []);
+    assert.equal(tater(dir, 'watch', '--page', notes.url, '--once').trim(), '');
   } finally {
     h.child.kill();
   }
 });
 
-test('two channels annotate one page without touching each other', () => {
-  const { dir, channel: a } = pushed();
-  const other = join(dir, 'other.json');
-  writeFileSync(other, JSON.stringify({ ...notes, notes: [{ id: 'n1', kind: 'step', step: 1, quote: 'more text' }] }));
-  const b = channelIn(tater(dir, 'push', other));
-  assert.notEqual(a, b);
-  const status = tater(dir, 'status');
-  assert.ok(status.includes(`channel ${a}`) && status.includes(`channel ${b}`));
-  assert.equal((status.match(/example\.com\/page \(1 notes\)/g) ?? []).length, 2);
+// Retries until read() returns want, for changes that arrive through file watching.
+async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
+  for (let i = 0; i < 50; i++) {
+    try { assert.deepEqual(await read(), want); return; } catch { await new Promise(r => setTimeout(r, 40)); }
+  }
+  assert.deepEqual(await read(), want);
+}
+
+test('ticked steps and read replies are shared by every browser through the helper', async () => {
+  const { dir } = pushed();
+  const chrome = host(dir), zen = host(dir);
+  try {
+    await chrome.waitFor('hello');
+    await zen.waitFor('hello');
+    // Each write lands through one browser's helper and shows up in the other's.
+    chrome.send({ type: 'state', page, state: { done: { n1: true }, seen: ['n1#1'] } });
+    await eventually(async () => (await zen.get())?.state, { done: { n1: true }, seen: ['n1#1'] });
+    zen.send({ type: 'state', page, state: { done: { s2: true } } });
+    await eventually(async () => (await chrome.get())?.state.done, { n1: true, s2: true });
+  } finally {
+    chrome.child.kill();
+    zen.child.kill();
+  }
 });
 
-test('a question about a selection becomes a new note in the channel it was sent to', () => {
-  const { dir, channel } = pushed();
-  const ask: Outgoing = { id: 'm2', at: '', page: '', match: notes.match, channel, kind: 'ask', noteId: null, quote: 'term', prefix: 'a ', suffix: ' here', text: 'what is this?' };
-  mkdirSync(join(dir, 'inbox'), { recursive: true });
-  writeFileSync(join(dir, 'inbox', `${channel}.jsonl`), `${JSON.stringify(ask)}\n`);
-  assert.match(tater(dir, 'reply', 'm2', 'a thing'), /added note q-m2/);
-  assert.ok(tater(dir, 'status').includes('(2 notes)'));
-  assert.equal(tater(dir, 'watch', '--channel', channel, '--once').trim(), '');
+test('a question on a page without notes reaches --all, and the answer starts its notes', () => {
+  const dir = home();
+  const ask: Outgoing = { id: 'm2', at: '', page: 'example.org/x', url: 'https://example.org/x', kind: 'ask', noteId: null, quote: 'term', prefix: 'a ', suffix: ' here', text: 'what is this?' };
+  const h = host(dir);
+  h.send({ type: 'send', message: ask });
+  return h.waitFor('sent').then(() => {
+    h.child.kill();
+    assert.match(tater(dir, 'watch', '--all', '--once'), /"id":"m2"/);
+    assert.match(tater(dir, 'reply', 'm2', 'a thing'), /added note q-m2/);
+    assert.match(tater(dir, 'status'), /page: https:\/\/example\.org\/x \(1 notes\)/);
+    assert.equal(tater(dir, 'watch', '--all', '--once').trim(), '');
+  });
 });
 
 test('tater finds the extension address Firefox and Zen store in prefs.js', () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'anno-tater-home-'));
   const zen = join(fakeHome, 'Library/Application Support/zen');
-  mkdirSync(join(zen, 'Profiles', 'abc.Default'), { recursive: true });
+  execFileSync('mkdir', ['-p', join(zen, 'Profiles', 'abc.Default')]);
   writeFileSync(join(zen, 'installs.ini'), '[X]\nDefault=Profiles/abc.Default\n');
   const uuids = JSON.stringify(JSON.stringify({ 'other@x': '1', 'anno-tater@farmerpete': 'uuid-123' }));
   writeFileSync(join(zen, 'Profiles', 'abc.Default', 'prefs.js'), `user_pref("extensions.webextensions.uuids", ${uuids});\n`);

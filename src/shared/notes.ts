@@ -35,11 +35,11 @@ export interface Term {
   def: string;
 }
 
+// One page's notes. The page URL is the key: one notes file, one shared state, and one
+// conversation per page, whatever the browser.
 export interface NotesFile {
-  match: string;
-  url?: string; // the page to open; also tells the extension which site needs access
+  url: string;
   title?: string;
-  channel?: string; // set by tater: the agent session's inbox, a random UUID
   scope?: string;
   notes: Note[];
   links?: Link[];
@@ -47,13 +47,12 @@ export interface NotesFile {
   acked?: string[];
 }
 
-// What the page sends back. The helper appends these to the channel's inbox.
+// What the page sends back. The helper appends these to the page's inbox.
 export interface Outgoing {
   id: string;
   at: string;
-  page: string;
-  match: string;
-  channel: string;
+  page: string; // the page key (pageKey of url)
+  url: string; // the full address it was sent from
   kind: 'reply' | 'ask' | 'done' | 'undone';
   noteId: string | null;
   quote?: string;
@@ -89,9 +88,8 @@ function checkNote(n: unknown, at: string, problems: Problems): void {
 export function validate(v: unknown): Problems {
   const problems: Problems = [];
   if (!isObj(v)) return ['the notes file must be a JSON object'];
-  if (!str(v.match) || !v.match) problems.push('match must be a non-empty part of the page URL');
-  for (const k of ['url', 'title', 'channel', 'scope'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
-  if (str(v.url) && str(v.match) && !comparableUrl(v.url).includes(v.match)) problems.push('url must contain match');
+  if (!str(v.url) || !originPattern(String(v.url))) problems.push('url must be the http(s) address of the page');
+  for (const k of ['title', 'scope'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
   if (!Array.isArray(v.notes)) problems.push('notes must be a list');
   else {
     v.notes.forEach((n, i) => checkNote(n, `notes[${i}]`, problems));
@@ -121,24 +119,11 @@ export function parseNotes(json: string): NotesFile {
   return v as NotesFile;
 }
 
-// ---------- URL matching ----------
+// ---------- pages ----------
 
-// A notes file applies to a page when its match string appears in the URL, ignoring the
-// scheme and the fragment. Each channel is one layer on the page: per channel the longest
-// (most specific) match wins, and the layers come back newest first.
-export const comparableUrl = (url: string) => url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/#.*$/, '');
-
-export function pickLayers<T extends { match: string; channel?: string; rev?: number }>(files: Iterable<T>, url: string): T[] {
-  const target = comparableUrl(url);
-  const best = new Map<string, T>();
-  for (const f of files) {
-    if (!target.includes(f.match)) continue;
-    const key = f.channel ?? '';
-    const current = best.get(key);
-    if (!current || f.match.length > current.match.length) best.set(key, f);
-  }
-  return [...best.values()].toSorted((a, b) => (b.rev ?? 0) - (a.rev ?? 0));
-}
+// The key for a page: its address without the scheme or the #fragment. The query string stays,
+// since it can change what a page shows (GitHub's ?plain=1).
+export const pageKey = (url: string) => url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/#.*$/, '');
 
 // The origin pattern a browser permission needs for a URL, e.g. "https://github.com/*".
 export function originPattern(url: string): string | null {
@@ -184,16 +169,11 @@ async function pipe(bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | 
   return new Uint8Array(await out.arrayBuffer());
 }
 
-export async function encodeFragment(notes: NotesFile, target: string): Promise<string> {
-  const json = new TextEncoder().encode(JSON.stringify({ target, notes }));
+export async function encodeFragment(notes: NotesFile): Promise<string> {
+  const json = new TextEncoder().encode(JSON.stringify(notes));
   return toB64Url(await pipe(json, new CompressionStream('gzip')));
 }
 
-export async function decodeFragment(fragment: string): Promise<{ target: string; notes: NotesFile }> {
-  const json = new TextDecoder().decode(await pipe(fromB64Url(fragment), new DecompressionStream('gzip')));
-  const v = JSON.parse(json) as { target?: unknown; notes?: unknown };
-  if (typeof v.target !== 'string') throw new Error('missing target URL');
-  const problems = validate(v.notes);
-  if (problems.length) throw new Error(problems.join('\n'));
-  return { target: v.target, notes: v.notes as NotesFile };
+export async function decodeFragment(fragment: string): Promise<NotesFile> {
+  return parseNotes(new TextDecoder().decode(await pipe(fromB64Url(fragment), new DecompressionStream('gzip'))));
 }

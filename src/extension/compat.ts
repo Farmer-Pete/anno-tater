@@ -1,17 +1,19 @@
 import type { NotesFile, Outgoing } from '../shared/notes.ts';
+import type { PageState } from '../shared/protocol.ts';
 
 // Chrome's MV3 `chrome.*` APIs return promises; Firefox's promise-based APIs live on `browser`.
 // Using `browser` where it exists covers both with one set of types.
 export const ext: typeof chrome = (globalThis as { browser?: typeof chrome }).browser ?? chrome;
 
 // Messages between the content script and the background, over a runtime port named "page".
-
 export type FromPage =
   | { type: 'hello'; url: string }
-  | { type: 'send'; message: Outgoing };
+  | { type: 'send'; message: Outgoing }
+  | { type: 'state'; state: Partial<PageState> };
 
 export type ToPage =
-  | { type: 'notes'; layers: NotesFile[]; twoWay: boolean; delivered: string[] } // one per channel, newest first
+  // pending: messages for this page that the agent hasn't answered yet
+  | { type: 'page'; notes: NotesFile | null; state: PageState; pending: Outgoing[]; twoWay: boolean; delivered: string[] }
   | { type: 'delivered'; ids: string[] }
   | { type: 'twoWay'; on: boolean }
   | { type: 'toggle-hidden' };

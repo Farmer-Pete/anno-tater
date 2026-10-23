@@ -7,23 +7,30 @@ export const CHROME_ID = 'pnonheeknfhclnmokcollijaflmhppdc';
 // Set in manifest/firefox.json.
 export const FIREFOX_ID = 'anno-tater@farmerpete';
 
-// One notes file: a channel's layer for the pages its match covers.
+// A page with notes, as the index lists it.
 export interface PageSummary {
-  channel: string;
-  match: string;
-  url?: string;
+  page: string; // pageKey(url)
+  url: string;
   title?: string;
-  rev: number; // the file's modification time; changes whenever the file does
+  rev: number; // newest modification time of the page's notes, state, and inbox
+}
+
+// What a page remembers across browsers: ticked steps and replies already read.
+export interface PageState {
+  done: Record<string, boolean>;
+  seen?: string[]; // "<noteId>#<index>" of Claude's replies; absent until the page is first shown
 }
 
 export type ToHost =
-  | { type: 'get'; channel: string; match: string }
-  | { type: 'send'; message: Outgoing };
+  | { type: 'get'; page: string }
+  | { type: 'send'; message: Outgoing }
+  | { type: 'state'; page: string; state: Partial<PageState> };
 
 export type FromHost =
   | { type: 'hello'; pages: PageSummary[]; delivered: string[] }
   | { type: 'pages'; pages: PageSummary[] }
-  | { type: 'notes'; channel: string; match: string; notes: NotesFile | null }
+  // pending: the page's messages Claude hasn't answered or acked yet, from the inbox
+  | { type: 'page'; page: string; notes: NotesFile | null; state: PageState; pending: Outgoing[] }
   | { type: 'sent'; id: string }
   | { type: 'delivered'; ids: string[] }
   | { type: 'error'; message: string };
