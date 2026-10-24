@@ -20,7 +20,7 @@
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `url` | yes | The page. Its address without `https://` or `#…` is the key: one notes file, one shared state, and one conversation per page. It also tells the extension which site needs access. |
+| `url` | yes | The page. Its address without `https://` or `#…` is the key: one notes file, one shared state, and one conversation per page. A fragment route (`#/settings`, `#!/settings`) is part of the key, since single-page apps use it to pick the page, so copy the address with its route. It also tells the extension which site needs access. |
 | `title` | no | Shown in the panel header. |
 | `scope` | no | CSS selector for the page's main content (`article.markdown-body` on GitHub). Quotes and terms outside it are ignored, which keeps nav bars and sidebars out. Default: `main`, else `body`. |
 | `notes` | yes | The notes, below. |

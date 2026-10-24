@@ -60,7 +60,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 }
 ```
 
-- `url` is the page. Its address without the scheme or `#fragment` is the page key.
+- `url` is the page. Its address without the scheme or `#fragment` is the page key. A fragment route (`#/settings`, `#!/settings`) stays in the key.
 - `kind` is one of `issue`, `caution`, `agree`, `info`, `step`. Steps also have `step: <number>`.
 - `decorate` is one of `box`, `circle`, `underline`, `bracket`.
 - Anchoring follows the W3C TextQuoteSelector: an exact quote with optional prefix and suffix. A quote that isn't found goes in the panel's "Couldn't place" list. Nothing is placed by a guess.
@@ -80,6 +80,8 @@ A page's address, without the scheme or the `#fragment`, keys everything:
 | `pages/<page>.json` | The notes | every browser |
 | `state/<page>.json` | Ticked steps and read replies | every browser (two-way mode) |
 | `inbox/<page>.jsonl` | The person's messages | every browser |
+
+A fragment route (`#/settings`, `#!/settings`) stays in the key, since single-page apps route with it; a bare `#/` is the root. A single-page app also changes its address without a reload, so the content script checks the address on `hashchange`, on `popstate`, and twice a second, and asks for the new page's notes when the key changes.
 
 So a page looks the same in Chrome, Zen, and Firefox Developer Edition, and a step ticked in one shows as ticked in the others. Each browser starts its own helper; all of them share the data folder and watch it, so a change made through one browser reaches the others. Hidden or shown and "Block site shortcuts" stay per browser, as view settings. Without the helper, a browser keeps its own copy of the page state.
 

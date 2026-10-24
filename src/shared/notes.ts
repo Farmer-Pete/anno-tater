@@ -122,8 +122,15 @@ export function parseNotes(json: string): NotesFile {
 // ---------- pages ----------
 
 // The key for a page: its address without the scheme or the #fragment. The query string stays,
-// since it can change what a page shows (GitHub's ?plain=1).
-export const pageKey = (url: string) => url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/#.*$/, '');
+// since it can change what a page shows (GitHub's ?plain=1). A fragment route stays too
+// (#/settings, #!/settings): single-page apps use it to pick the page. A bare #/ is the root.
+export function pageKey(url: string): string {
+  const bare = url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  const at = bare.indexOf('#');
+  if (at === -1) return bare;
+  const route = /^#(!?\/[^#]*)/.exec(bare.slice(at))?.[1];
+  return bare.slice(0, at) + (route && route !== '/' && route !== '!/' ? `#${route}` : '');
+}
 
 // The origin pattern a browser permission needs for a URL, e.g. "https://github.com/*".
 export function originPattern(url: string): string | null {

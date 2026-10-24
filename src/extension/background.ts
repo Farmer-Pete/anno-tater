@@ -84,13 +84,14 @@ const broadcast = (m: ToPage) => { for (const port of pages.keys()) port.postMes
 async function refresh(port: Port): Promise<void> {
   const info = pages.get(port);
   if (!info) return;
-  info.rev = revOf(info.page);
-  const fromHelper = helper ? await askHelper(info.page) : null;
-  let notes = fromHelper ? fromHelper.notes : (await localPages())[info.page] ?? null;
-  const state = fromHelper?.state ?? await localState(info.page);
-  if (!notes && info.tabId !== undefined && activated.has(info.tabId)) notes = { url: info.url, notes: [] };
-  info.count = notes ? notes.notes.length : null;
-  const message: ToPage = { type: 'page', notes, state, pending: fromHelper?.pending ?? [], twoWay: helperState === 'connected', delivered: [...delivered] };
+  const { page, url } = info; // a single-page app can move on while we wait
+  info.rev = revOf(page);
+  const fromHelper = helper ? await askHelper(page) : null;
+  let notes = fromHelper ? fromHelper.notes : (await localPages())[page] ?? null;
+  const state = fromHelper?.state ?? await localState(page);
+  if (!notes && info.tabId !== undefined && activated.has(info.tabId)) notes = { url, notes: [] };
+  if (info.page === page) info.count = notes ? notes.notes.length : null;
+  const message: ToPage = { type: 'page', page, notes, state, pending: fromHelper?.pending ?? [], twoWay: helperState === 'connected', delivered: [...delivered] };
   try { port.postMessage(message); } catch { pages.delete(port); }
 }
 

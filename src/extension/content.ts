@@ -42,9 +42,14 @@ if (!g[FLAG]) {
     else engine.start();
   };
 
+  // The page key the background is looking up for us. Single-page apps change it without a reload.
+  let current = '';
+  const hello = () => { current = pageKey(location.href); post({ type: 'hello', url: location.href }); };
+
   function onMessage(raw: unknown): void {
     const m = raw as ToPage;
     if (m.type === 'page') {
+      if (m.page !== current) return; // an answer for the route we just left
       notes = m.notes;
       engine.load(notes, { twoWay: m.twoWay, state: m.state, pending: m.pending });
       engine.setDelivered(m.delivered);
@@ -59,8 +64,14 @@ if (!g[FLAG]) {
     port = ext.runtime.connect({ name: 'page' });
     port.onMessage.addListener(onMessage);
     port.onDisconnect.addListener(() => { port = null; setTimeout(connect, 1000); });
-    post({ type: 'hello', url: location.href });
+    hello();
   }
+
+  // pushState fires no event a content script can see, so check the address twice a second too.
+  const follow = () => { if (pageKey(location.href) !== current) hello(); };
+  addEventListener('hashchange', follow);
+  addEventListener('popstate', follow);
+  setInterval(follow, 500);
 
   void ext.storage.local.get(null).then(all => {
     for (const [k, v] of Object.entries(all)) if (k.startsWith('ui:')) cache[k.slice(3)] = v;

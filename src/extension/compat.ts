@@ -13,7 +13,7 @@ export type FromPage =
 
 export type ToPage =
   // pending: messages for this page that the agent hasn't answered yet
-  | { type: 'page'; notes: NotesFile | null; state: PageState; pending: Outgoing[]; twoWay: boolean; delivered: string[] }
+  | { type: 'page'; page: string; notes: NotesFile | null; state: PageState; pending: Outgoing[]; twoWay: boolean; delivered: string[] }
   | { type: 'delivered'; ids: string[] }
   | { type: 'twoWay'; on: boolean }
   | { type: 'toggle-hidden' };

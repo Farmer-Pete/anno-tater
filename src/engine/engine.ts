@@ -189,7 +189,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     }
     return new Set(state.seen);
   }
-  const unreadNotes = () => { const s = seen(); return (data?.notes ?? []).filter(n => claudeKeys(n).some(k => !s.has(k))); };
+  // No notes, nothing to mark seen: a single-page app route without notes mustn't get a state file.
+  const unreadNotes = () => {
+    if (!data) return [];
+    const s = seen();
+    return data.notes.filter(n => claudeKeys(n).some(k => !s.has(k)));
+  };
   function markSeen(n: Note): boolean {
     const s = seen(), keys = claudeKeys(n);
     if (keys.every(k => s.has(k))) return false;
@@ -621,7 +626,8 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       twoWay = loaded.twoWay;
       state = loaded.state;
       pending = loaded.pending;
-      sentSince = sentSince.filter(m => !pending.some(p => p.id === m.id));
+      // A single-page app may have moved to another route: drop what was sent from the last one.
+      sentSince = sentSince.filter(m => m.page === keyOf(location.href) && !pending.some(p => p.id === m.id));
       if (started) render();
     },
     setDelivered(ids) {

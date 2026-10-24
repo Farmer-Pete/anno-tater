@@ -25,7 +25,7 @@ Releasing publishes outside this machine: confirm with the person first.
 
 ## How it fits together
 
-- A page's URL without scheme or fragment is the key: `pages/`, `state/`, and `inbox/` in `~/.local/share/anno-tater/` each hold one file per page, shared by every browser.
+- A page's URL without scheme or fragment is the key (a `#/` or `#!/` route stays): `pages/`, `state/`, and `inbox/` in `~/.local/share/anno-tater/` each hold one file per page, shared by every browser.
 - Extensions can't read files. The helper (started by the browser over stdio) reads and writes the data folder and talks to the background. Without the helper, `tater open` carries notes to the extension's `open.html` in the URL fragment: one-way only.
 - The extension runs only on sites the person allowed (`optional_host_permissions`, one Allow click per site); the background registers the content script for those origins.
 - Text highlights use the CSS Custom Highlight API, so pages that re-render can't erase them. Everything else lives in one shadow root.

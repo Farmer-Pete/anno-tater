@@ -41,6 +41,14 @@ test('a page key ignores the scheme and the fragment, but keeps the query', () =
   assert.equal(pageKey('https://example.com/a.md?plain=1'), 'example.com/a.md?plain=1');
 });
 
+test('a page key keeps a fragment route, minus any anchor after it', () => {
+  assert.equal(pageKey('https://app.example.com/#/users'), 'app.example.com/#/users');
+  assert.equal(pageKey('https://app.example.com/#!/users/7'), 'app.example.com/#!/users/7');
+  assert.equal(pageKey('https://app.example.com/#/docs#install'), 'app.example.com/#/docs');
+  assert.equal(pageKey('https://app.example.com/#/'), 'app.example.com/');
+  assert.equal(pageKey('https://app.example.com/#!/'), 'app.example.com/');
+});
+
 test('originPattern covers http and https only', () => {
   assert.equal(originPattern('https://github.com/a/b?c'), 'https://github.com/*');
   assert.equal(originPattern('file:///tmp/x.html'), null);
