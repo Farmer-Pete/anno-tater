@@ -11,7 +11,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
   tater open <notes.json> [--browser B]     Store notes and open the page in your default browser (no helper needed)
   tater push <notes.json>                   Store or update notes; pages open with the helper redraw live
-  tater watch --page URL [--once]           Print new messages from a page, one JSON line each (--all: every page)
+  tater watch --page URL... [--once]        Print new messages from pages, one JSON line each (repeat --page; --all: every page)
   tater reply <message-id> <text|->         Answer a message in its thread ("-" reads the text from stdin)
   tater reply --note ID <text|->            Answer every message waiting on a note (--page URL if the id repeats)
   tater ack <message-id>...                 Mark messages handled without answering
@@ -84,9 +84,9 @@ function reply(ms: Outgoing[], text: string): string {
 
 // Prints every message not yet answered or acked, then follows the inbox. Printing marks a
 // message delivered, which the page shows as "Claude has it".
-function watchInbox(page: string | null, once: boolean): void {
+function watchInbox(pages: string[] | null, once: boolean): void {
   const printed = new Set<string>();
-  const waiting = () => (page ? pending(page) : loadPages().flatMap(p => pending(pageKey(p.url))).concat(orphans()));
+  const waiting = () => (pages ? pages.flatMap(pending) : loadPages().flatMap(p => pending(pageKey(p.url))).concat(orphans()));
   const flush = () => {
     const fresh = waiting().filter(m => !printed.has(m.id));
     for (const m of fresh) {
@@ -98,14 +98,15 @@ function watchInbox(page: string | null, once: boolean): void {
   };
   flush();
   if (once) return;
-  // One page: its own folder. Every page: the whole tree, which also sees notes and state writes,
-  // so only inbox changes count.
-  const dir = page ? pageDir(page) : pagesDir();
-  mkdirSync(dir, { recursive: true });
+  // Named pages: each page's own folder. Every page: the whole tree, which also sees notes and
+  // state writes, so only inbox changes count.
   let timer: NodeJS.Timeout | undefined;
-  watch(dir, { recursive: !page }, (_event, file) => {
-    if (String(file).endsWith('inbox.jsonl')) { clearTimeout(timer); timer = setTimeout(flush, 100); }
-  });
+  for (const dir of pages ? pages.map(pageDir) : [pagesDir()]) {
+    mkdirSync(dir, { recursive: true });
+    watch(dir, { recursive: !pages }, (_event, file) => {
+      if (String(file).endsWith('inbox.jsonl')) { clearTimeout(timer); timer = setTimeout(flush, 100); }
+    });
+  }
   setInterval(flush, 5000); // a safety net in case a file event is missed
 }
 
@@ -145,9 +146,10 @@ function store(file: string): NotesFile {
 // ---------- main ----------
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { page: { type: 'string' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+  options: { page: { type: 'string', multiple: true }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
+const pages = [...new Set((values.page ?? []).map(pageKey))];
 
 switch (values.help ? 'help' : command) {
   case 'push':
@@ -162,12 +164,13 @@ switch (values.help ? 'help' : command) {
     break;
   }
   case 'watch':
-    if (!values.page && !values.all) fail('watch needs --page URL (open and push print it), or --all');
-    watchInbox(values.page ? pageKey(values.page) : null, values.once ?? false);
+    if (!pages.length && !values.all) fail('watch needs --page URL (open and push print it; repeat it for several pages), or --all');
+    watchInbox(values.all ? null : pages, values.once ?? false);
     break;
   case 'reply': {
     if (values.note) {
-      const ms = waitingOn(values.note, values.page ? pageKey(values.page) : null);
+      if (pages.length > 1) fail('reply --note takes one --page');
+      const ms = waitingOn(values.note, pages[0] ?? null);
       console.log(reply(ms, await readText(args[0])));
     } else {
       const m = findMessage(args[0] ?? fail('reply needs a message id, or --note ID'));
