@@ -34,7 +34,7 @@
 | --- | --- |
 | `id` | Unique, stable across edits. |
 | `kind` | `issue` (red, a problem), `caution` (amber, a risk or doubt), `agree` (green, endorse this), `info` (blue, context), `step` (purple numbered pin, an action for the person). |
-| `quote` | Exact rendered text to anchor on. |
+| `quote` | Exact rendered text to anchor on. Leave it out for a note about the whole page, such as a summary or a reading guide: the panel lists it under "On this page", above the anchored notes, and clicking it opens its card. |
 | `prefix`, `suffix` | Text just before or after the quote, to pick one of several matches. |
 | `title` | One line: the point of the note. Shown on hover and in the panel. |
 | `body` | Details, shown on click. Paragraphs split by a blank line, `- ` bullet lists, GitHub-style tables (header row, `---` rule row, body rows), fenced code blocks (```` ```python ````; `diff` colors `+` and `-` lines), `` `code` ``, `**bold**`, `[text](https://…)`. |

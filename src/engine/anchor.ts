@@ -1,6 +1,6 @@
 // Turns text quotes into DOM Ranges. The matching itself lives in shared/notes.ts (findQuote);
 // this file maps between page text and the text nodes it came from.
-import { findQuote, norm, type Note, type Term } from '../shared/notes.ts';
+import { findQuote, norm, type Term } from '../shared/notes.ts';
 
 const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'TEMPLATE']);
 
@@ -45,7 +45,7 @@ function rangeAt(idx: TextIndex, start: number, len: number): Range | null {
 const visible = (r: Range) => r.getClientRects().length > 0;
 
 // The best visible match for a note's quote, or null when the quote isn't on the page.
-export function anchor(idx: TextIndex, note: Pick<Note, 'quote' | 'prefix' | 'suffix'>): { range: Range; ambiguous: boolean } | null {
+export function anchor(idx: TextIndex, note: { quote: string; prefix?: string; suffix?: string }): { range: Range; ambiguous: boolean } | null {
   const { hits, ambiguous } = findQuote(idx.text, note);
   const len = norm(note.quote).length;
   const ranges = hits.map(i => rangeAt(idx, i, len)).filter((r): r is Range => r !== null);
