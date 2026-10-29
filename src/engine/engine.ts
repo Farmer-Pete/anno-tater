@@ -44,8 +44,8 @@ export interface Engine {
 type RoughAnnotation = ReturnType<typeof annotate>;
 type RoughAnnotationConfig = Parameters<typeof annotate>[1];
 // paint: the pieces to highlight when they aren't the whole range (several diff lines skip the
-// line numbers between them).
-interface Placed { note: Note; range: Range; ambiguous: boolean; matches: number; paint?: Range[] }
+// line numbers between them). text: what the range covered when placed, to notice when it moves.
+interface Placed { note: Note; range: Range; ambiguous: boolean; matches: number; paint?: Range[]; text: string }
 interface TermHit { term: Term; range: Range }
 interface Mark { p: Placed; proxy: HTMLDivElement; ann: RoughAnnotation | null; type: string; last: string }
 
@@ -95,7 +95,7 @@ function potatoIcon(): SVGSVGElement {
 }
 
 // A note's range: its diff line (narrowed to the quote, if it has one), or its quote in the page text.
-function place(note: Note, idx: ReturnType<typeof buildIndex>): Omit<Placed, 'note'> | null {
+function place(note: Note, idx: ReturnType<typeof buildIndex>): Omit<Placed, 'note' | 'text'> | null {
   if (!note.anchor) return note.quote === undefined ? null : anchor(idx, { ...note, quote: note.quote });
   const { file, line, endLine, side } = note.anchor;
   if (note.quote !== undefined) {
@@ -110,6 +110,11 @@ function place(note: Note, idx: ReturnType<typeof buildIndex>): Omit<Placed, 'no
   range.setEnd(last.endContainer, last.endOffset);
   return { range, ambiguous: false, matches: 1, paint: paint.length > 1 ? paint : undefined };
 }
+
+// Whether a range no longer covers its text. When the page removes the nodes under a live range,
+// the browser shrinks the range onto their parent, which is still on the page, so asking whether
+// its nodes are still connected misses it (GitHub does this when a diff expands).
+const moved = (r: Range, text: string) => r.collapsed || norm(r.toString()) !== text;
 
 const label = (n: Note) => (n.kind === 'step' ? `Step ${n.step}` : kindOf(n).label);
 
@@ -684,7 +689,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       for (const note of data.notes) {
         if (isPageNote(note)) continue;
         const a = place(note, idx);
-        if (a) placed.push({ note, ...a }); else unplaced.push(note);
+        if (a) placed.push({ note, ...a, text: norm(a.range.toString()) }); else unplaced.push(note);
       }
       terms = findTerms(idx, data.glossary);
     }
@@ -717,8 +722,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   }
 
   // Pages like GitHub swap out the nodes under a range after load; re-anchor when that happens.
-  const broken = () => placed.some(p => !p.range.startContainer.isConnected || !p.range.endContainer.isConnected)
-    || terms.some(t => !t.range.startContainer.isConnected);
+  const broken = () => placed.some(p => moved(p.range, p.text)) || terms.some(t => moved(t.range, norm(t.term.term)));
   // Single-page apps render text after the notes arrive; re-anchor once a missing quote shows up.
   const arrived = () => {
     if (!unplaced.length) return false;
