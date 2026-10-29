@@ -181,6 +181,26 @@ test('one watch follows several pages and skips the rest', async () => {
   assert.deepEqual(once.trim().split('\n').map(l => (JSON.parse(l) as Outgoing).id), ['watched']);
 });
 
+// The message ids in watch output.
+const ids = (out: string) => out.trim().split('\n').filter(Boolean).map(l => (JSON.parse(l) as Outgoing).id);
+
+test('watch --skip done,undone acks ticked steps without printing them', async () => {
+  const { dir } = pushed();
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    for (const [id, kind, text] of [['t1', 'done', null], ['t2', 'undone', null], ['r1', 'reply', 'why?']] as const) {
+      h.send({ type: 'send', message: { id, at: '', page, url: notes.url, kind, noteId: 'n1', text } satisfies Outgoing });
+      await h.waitFor('sent');
+    }
+  } finally {
+    h.child.kill();
+  }
+  assert.deepEqual(ids(tater(dir, 'watch', '--page', notes.url, '--once', '--skip', 'done,undone')), ['r1']);
+  assert.deepEqual(ids(tater(dir, 'watch', '--page', notes.url, '--once')), ['r1']); // the ticks were acked, the reply still waits
+  assert.throws(() => tater(dir, 'watch', '--page', notes.url, '--once', '--skip', 'reply'), /--skip takes done and undone only/);
+});
+
 // Retries until read() returns want, for changes that arrive through file watching.
 async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
   for (let i = 0; i < 50; i++) {

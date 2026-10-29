@@ -12,6 +12,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater open <notes.json> [--browser B]     Store notes and open the page in your default browser (no helper needed)
   tater push <notes.json>                   Store or update notes; pages open with the helper redraw live
   tater watch --page URL... [--once]        Print new messages from pages, one JSON line each (repeat --page; --all: every page)
+              [--skip done,undone]          Ack ticked-step events without printing them
   tater reply <message-id> <text|->         Answer a message in its thread ("-" reads the text from stdin)
   tater reply --note ID <text|->            Answer every message waiting on a note (--page URL if the id repeats)
   tater ack <message-id>...                 Mark messages handled without answering
@@ -84,11 +85,15 @@ function reply(ms: Outgoing[], text: string): string {
 
 // Prints every message not yet answered or acked, then follows the inbox. Printing marks a
 // message delivered, which the page shows as "Claude has it".
-function watchInbox(pages: string[] | null, once: boolean): void {
+// Skipped kinds (only step ticks) are acked instead, so the page doesn't show them as waiting.
+function watchInbox(pages: string[] | null, once: boolean, skip: Set<string>): void {
   const printed = new Set<string>();
   const waiting = () => (pages ? pages.flatMap(pending) : loadPages().flatMap(p => pending(pageKey(p.url))).concat(orphans()));
   const flush = () => {
-    const fresh = waiting().filter(m => !printed.has(m.id));
+    const all = waiting().filter(m => !printed.has(m.id));
+    const skipped = all.filter(m => skip.has(m.kind));
+    for (const m of skipped) saveWithAck(pageFor(m), [m.id]);
+    const fresh = all.filter(m => !skip.has(m.kind));
     for (const m of fresh) {
       printed.add(m.id);
       const { id, kind, noteId, quote, prefix, suffix, text, url } = m;
@@ -146,7 +151,7 @@ function store(file: string): NotesFile {
 // ---------- main ----------
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { page: { type: 'string', multiple: true }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+  options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
 const pages = [...new Set((values.page ?? []).map(pageKey))];
@@ -165,7 +170,9 @@ switch (values.help ? 'help' : command) {
   }
   case 'watch':
     if (!pages.length && !values.all) fail('watch needs --page URL (open and push print it; repeat it for several pages), or --all');
-    watchInbox(values.all ? null : pages, values.once ?? false);
+    const skip = new Set(values.skip?.split(',').map(k => k.trim()).filter(Boolean));
+    for (const k of skip) if (k !== 'done' && k !== 'undone') fail(`--skip takes done and undone only (got ${k}): every other message needs an answer`);
+    watchInbox(values.all ? null : pages, values.once ?? false, skip);
     break;
   case 'reply': {
     if (values.note) {
