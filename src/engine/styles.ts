@@ -73,6 +73,7 @@ export const UI_CSS = `
   .panel header button { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 2px 8px; cursor: pointer; }
   .panel.mini { width: auto; }
   .panel .sec { padding: 6px 10px; }
+  .panel .warn { margin: 8px 10px 0; padding: 6px 8px; border-radius: 6px; background: #fff8c5; border: 1px solid #d4a72c; }
   .panel .sec h4 { margin: 4px 0; font-size: 11px !important; font-weight: 700 !important; text-transform: uppercase; color: #656d76 !important; }
   .item { display: flex; gap: 6px; align-items: flex-start; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
   .item:hover { background: #f6f8fa; }

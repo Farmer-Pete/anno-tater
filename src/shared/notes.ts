@@ -41,6 +41,7 @@ export interface NotesFile {
   url: string;
   title?: string;
   scope?: string;
+  commit?: string; // on a pull request, the head commit the notes were written for
   notes: Note[];
   links?: Link[];
   glossary?: Term[];
@@ -98,6 +99,7 @@ export function validate(v: unknown): Problems {
   if (!isObj(v)) return ['the notes file must be a JSON object'];
   if (!str(v.url) || !originPattern(String(v.url))) problems.push('url must be the http(s) address of the page');
   for (const k of ['title', 'scope', 'session'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
+  if (v.commit !== undefined && !(str(v.commit) && /^[0-9a-f]{7,40}$/i.test(v.commit))) problems.push('commit must be a commit SHA (7 to 40 hex digits)');
   if (!Array.isArray(v.notes)) problems.push('notes must be a list');
   else {
     v.notes.forEach((n, i) => checkNote(n, `notes[${i}]`, problems));
