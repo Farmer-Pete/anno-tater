@@ -30,6 +30,7 @@ export interface Placement {
   onPage: number; // notes without a quote
   unplaced: { id: string; quote: string }[];
   ambiguous: { id: string; quote: string; matches: number }[]; // placed on the best of several equal matches
+  commit?: string; // the pull request's head commit as the page showed it
 }
 
 export type ToHost =

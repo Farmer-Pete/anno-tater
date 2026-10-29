@@ -22,6 +22,7 @@
 | --- | --- | --- |
 | `url` | yes | The page. Its address without `https://` or `#…` is the key: one notes file, one shared state, and one conversation per page. A fragment route (`#/settings`, `#!/settings`) is part of the key, since single-page apps use it to pick the page, so copy the address with its route. It also tells the extension which site needs access. |
 | `title` | no | Shown in the panel header. |
+| `commit` | no | On a GitHub pull request, the head commit the notes were written for (`gh pr view <n> --json headRefOid -q .headRefOid`). When the author pushes more commits, the panel warns that the notes were written for an older commit, and `tater status --page` says so too. |
 | `scope` | no | CSS selector for the page's main content (`article.markdown-body` on GitHub). Quotes and terms outside it are ignored, which keeps nav bars and sidebars out. Default: `main`, else `body`. |
 | `notes` | yes | The notes, below. |
 | `links` | no | Arrows between two notes, drawn down the left margin: `from`, `to` (note ids), optional `label`. |

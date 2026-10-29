@@ -95,3 +95,9 @@ test('anchorsKey changes with what anchoring reads, and only that', () => {
   assert.notEqual(anchorsKey({ ...base, notes: [{ ...base.notes[0]!, quote: 'other text' }] }), key);
   assert.notEqual(anchorsKey({ ...base, scope: 'article' }), key);
 });
+
+test('commit must look like a SHA', () => {
+  const page = { url: 'https://github.com/o/r/pull/1', notes: [] };
+  assert.deepEqual(validate({ ...page, commit: 'cbfda8b' }), []);
+  assert.deepEqual(validate({ ...page, commit: 'main' }), ['commit must be a commit SHA (7 to 40 hex digits)']);
+});

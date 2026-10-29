@@ -151,6 +151,7 @@ function placementLines(p: NotesFile): string[] {
   if (!r) return ['placement: not reported yet; open the page in a browser that has the helper'];
   const lines = [`placed: ${r.placed}${r.onPage ? `, plus ${r.onPage} about the whole page` : ''} (drawn ${r.at})`];
   if (r.notes !== anchorsKey(p)) lines.push('stale: the notes changed since the page last drew them; reload the page');
+  if (p.commit && r.commit && !r.commit.startsWith(p.commit.toLowerCase())) lines.push(`commit: the notes are for ${p.commit.slice(0, 7)}, but the page shows ${r.commit.slice(0, 7)}`);
   for (const u of r.unplaced) lines.push(`unplaced: ${u.id} ${JSON.stringify(u.quote)}`);
   for (const a of r.ambiguous) lines.push(`ambiguous: ${a.id} ${JSON.stringify(a.quote)} (${a.matches} matches; add prefix or suffix)`);
   return lines;

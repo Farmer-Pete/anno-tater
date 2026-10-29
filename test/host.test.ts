@@ -254,6 +254,23 @@ test('status --page prints what the page last placed, and says when the notes mo
   assert.match(tater(dir, 'status', '--page', notes.url), /stale: the notes changed/);
 });
 
+test('status --page says when the pull request moved past the notes commit', async () => {
+  const dir = home();
+  const file = join(dir, 'notes.json');
+  writeFileSync(file, JSON.stringify({ ...notes, commit: 'abc1234' }));
+  tater(dir, 'push', file);
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    const placement = { at: '', notes: '', placed: 1, onPage: 0, unplaced: [], ambiguous: [], commit: 'def5678'.padEnd(40, '0') };
+    h.send({ type: 'state', page, state: { placement } });
+    await eventually(async () => (await h.get())?.state.placement?.commit, placement.commit);
+  } finally {
+    h.child.kill();
+  }
+  assert.match(tater(dir, 'status', '--page', notes.url), /commit: the notes are for abc1234, but the page shows def5678/);
+});
+
 // Retries until read() returns want, for changes that arrive through file watching.
 async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
   for (let i = 0; i < 50; i++) {

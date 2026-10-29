@@ -11,6 +11,7 @@ import { anchorsKey, norm, pageKey as keyOf, type Kind, type Note, type NotesFil
 import type { PageState, Placement } from '../shared/protocol.ts';
 import { anchor, buildIndex, context, findTerms } from './anchor.ts';
 import { h, inline, md, svg } from './dom.ts';
+import { headCommit } from './github.ts';
 import { POTATO } from './potato.ts';
 import { ACCENT, KINDS, PAGE_CSS, UI_CSS } from './styles.ts';
 
@@ -559,6 +560,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       h('button', { title: 'Hide or show all markings (Alt+Shift+H)', onclick: () => setHidden(!hidden()) }, hidden() ? 'Show' : 'Hide'),
       !hidden() && h('button', { title: 'Collapse panel', onclick: () => { store.set('panel-open', !panelOpen()); renderPanel(); } }, panelOpen() ? '–' : '+')));
     if (!open) return;
+    // Notes for an older commit may point at code that has since moved.
+    const head = data.commit ? headCommit() : null;
+    if (data.commit && head && !head.startsWith(data.commit.toLowerCase())) {
+      panel.append(h('div', { class: 'warn' }, 'Notes were written for ', h('code', null, data.commit.slice(0, 7)),
+        '. This pull request is now at ', h('code', null, head.slice(0, 7)), '.'));
+    }
     const row = (note: Note, onclick: () => void) => {
       const done = note.kind === 'step' && isDone(note.id);
       const el = h('div', { class: `item ${unread.has(note.id) ? 'unread' : ''}`, onclick },
@@ -632,6 +639,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       onPage: pageNotes.length,
       unplaced: unplaced.map(n => ({ id: n.id, quote: n.quote ?? '' })),
       ambiguous: placed.filter(p => p.ambiguous).map(p => ({ id: p.note.id, quote: p.note.quote ?? '', matches: p.matches })),
+      commit: headCommit() ?? undefined,
     };
     const key = JSON.stringify(report);
     if (key === lastReport) return;
