@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, watch } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { dirname, resolve } from 'node:path';
-import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, validate, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, validate, whereText, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
@@ -19,6 +19,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater reply --note ID <text|->            Answer every message waiting on a note (--page URL if the id repeats)
   tater ack <message-id>...                 Mark messages handled without answering
   tater mark <note-id> --posted <url>       Record the published comment a note became (--page URL if the id repeats)
+  tater export --github-review --page URL   Print a GitHub review built from the notes queued on a pull request page
   tater check <notes.json>                  Validate a notes file
   tater status [--page URL...]              Pages, helper install state, and waiting messages
                                             (--page: also which notes placed, didn't, or matched more than once)
@@ -158,6 +159,28 @@ function placementLines(p: NotesFile): string[] {
   return lines;
 }
 
+// A note as a review comment: its title in bold, then its body.
+const commentText = (n: Note) => [n.title && `**${n.title}**`, n.body].filter(Boolean).join('\n\n');
+
+// A review for POST /repos/{owner}/{repo}/pulls/{n}/reviews, from the notes the person queued:
+// notes on a diff line become line comments, the rest go in the review body. Without an event,
+// GitHub keeps the review pending until the person submits it.
+function githubReview(p: NotesFile): { review: object; endpoint: string } {
+  const pr = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(p.url) ?? fail(`${p.url} is not a GitHub pull request`);
+  const queued = readState(pageKey(p.url)).queued ?? {};
+  const notes = p.notes.filter(n => queued[n.id] && !n.posted);
+  if (!notes.length) fail('no notes are queued on that page; queue them from a note card with "Queue as review comment"');
+  const comments = notes.flatMap(n => {
+    if (!n.anchor) return [];
+    const { file, line, endLine, side = 'RIGHT' } = n.anchor;
+    const range = endLine && endLine !== line ? { start_line: line, start_side: side } : {};
+    return [{ path: file, line: endLine ?? line, side, ...range, body: commentText(n) }];
+  });
+  const body = notes.filter(n => !n.anchor).map(n => `> ${whereText(n) || 'This page'}\n\n${commentText(n)}`).join('\n\n');
+  const commit = p.commit?.length === 40 ? { commit_id: p.commit } : {};
+  return { review: { ...commit, body, comments }, endpoint: `repos/${pr[1]}/${pr[2]}/pulls/${pr[3]}/reviews` };
+}
+
 // ---------- opening pages ----------
 // With the helper, the browser fetches the notes itself, so tater just opens the page. Without
 // it, the notes ride in the fragment of the extension's intake page.
@@ -196,7 +219,7 @@ function store(file: string, force: boolean): NotesFile {
 // ---------- main ----------
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, force: { type: 'boolean' }, posted: { type: 'string' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+  options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, force: { type: 'boolean' }, posted: { type: 'string' }, 'github-review': { type: 'boolean' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
 const pages = [...new Set((values.page ?? []).map(pageKey))];
@@ -251,6 +274,15 @@ switch (values.help ? 'help' : command) {
       savePage(page);
       console.log(`marked ${id} posted on ${page.url}`);
     }
+    break;
+  }
+  case 'export': {
+    if (!values['github-review']) fail('export needs a format: --github-review');
+    if (pages.length !== 1) fail('export needs one --page URL');
+    const p = findPage(pages[0] ?? '') ?? fail('no notes stored for that page');
+    const { review, endpoint } = githubReview(p);
+    console.log(JSON.stringify(review, null, 2));
+    console.error(`post it as a pending review: gh api -X POST ${endpoint} --input <this output>`);
     break;
   }
   case 'status': {
