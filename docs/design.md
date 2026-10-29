@@ -85,7 +85,7 @@ A fragment route (`#/settings`, `#!/settings`) stays in the key, since single-pa
 
 So a page looks the same in Chrome, Zen, and Firefox Developer Edition, and a step ticked in one shows as ticked in the others. Each browser starts its own helper; all of them share the data folder and watch it, so a change made through one browser reaches the others. Hidden or shown and "Block site shortcuts" stay per browser, as view settings. Without the helper, a browser keeps its own copy of the page state.
 
-The trade-off is deliberate: two agent sessions on the same page replace each other's notes and share its replies. Sessions on different pages never cross. "Ask Claude about this page" on a page without notes lands in that page's inbox; `tater watch --all` shows it, and the answer starts the page's notes file.
+The trade-off is deliberate: a page has one notes file, so two agent sessions on the same page share its replies and would replace each other's notes. `tater push` records the session that wrote the notes (Claude Code's `CLAUDE_CODE_SESSION_ID`) and refuses to replace another session's notes without `--force`. Sessions on different pages never cross. "Ask Claude about this page" on a page without notes lands in that page's inbox; `tater watch --all` shows it, and the answer starts the page's notes file.
 
 ## Native messaging
 

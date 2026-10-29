@@ -9,8 +9,10 @@ import { pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
 import type { FromHost } from '../src/shared/protocol.ts';
 
 const home = () => mkdtempSync(join(tmpdir(), 'anno-tater-'));
-const tater = (dir: string, ...args: string[]) =>
-  execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/cli/tater.ts', ...args], { env: { ...process.env, ANNO_TATER_HOME: dir }, encoding: 'utf8' });
+// Runs tater on a data folder, as no agent session unless one is given.
+const taterAs = (session: string, dir: string, ...args: string[]) =>
+  execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/cli/tater.ts', ...args], { env: { ...process.env, ANNO_TATER_HOME: dir, CLAUDE_CODE_SESSION_ID: session }, encoding: 'utf8', stdio: 'pipe' });
+const tater = (dir: string, ...args: string[]) => taterAs('', dir, ...args);
 
 test('framing round-trips messages split across chunks', () => {
   const got: unknown[] = [];
@@ -199,6 +201,16 @@ test('watch --skip done,undone acks ticked steps without printing them', async (
   assert.deepEqual(ids(tater(dir, 'watch', '--page', notes.url, '--once', '--skip', 'done,undone')), ['r1']);
   assert.deepEqual(ids(tater(dir, 'watch', '--page', notes.url, '--once')), ['r1']); // the ticks were acked, the reply still waits
   assert.throws(() => tater(dir, 'watch', '--page', notes.url, '--once', '--skip', 'reply'), /--skip takes done and undone only/);
+});
+
+test('a push over notes another session wrote needs --force', () => {
+  const { dir, file } = pushed();
+  taterAs('aaaaaaaa-1111', dir, 'push', file); // notes with no owner yet: any session may take them
+  assert.match(taterAs('aaaaaaaa-1111', dir, 'status'), /\(1 notes, session aaaaaaaa \(this one\)\)/);
+  assert.throws(() => taterAs('bbbbbbbb-2222', dir, 'push', file), /another agent session \(aaaaaaaa\) wrote the notes for https:\/\/example\.com\/page; pass --force/);
+  taterAs('bbbbbbbb-2222', dir, 'push', file, '--force');
+  assert.match(tater(dir, 'status'), /\(1 notes, session bbbbbbbb\)/);
+  tater(dir, 'push', file); // without a session id, nothing to compare
 });
 
 // Retries until read() returns want, for changes that arrive through file watching.

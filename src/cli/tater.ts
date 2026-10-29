@@ -11,6 +11,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
   tater open <notes.json> [--browser B]     Store notes and open the page in your default browser (no helper needed)
   tater push <notes.json>                   Store or update notes; pages open with the helper redraw live
+                                            (--force: replace notes another agent session wrote)
   tater watch --page URL... [--once]        Print new messages from pages, one JSON line each (repeat --page; --all: every page)
               [--skip done,undone]          Ack ticked-step events without printing them
   tater reply <message-id> <text|->         Answer a message in its thread ("-" reads the text from stdin)
@@ -37,8 +38,12 @@ const targetBrowser = (b: string | undefined): Browser =>
 // ---------- messages ----------
 const findMessage = (id: string) => readAllInboxes().find(m => m.id === id) ?? fail(`no message with id ${id}`);
 
+// The agent session running tater, when the agent says (Claude Code sets this for its shell).
+const session = process.env.CLAUDE_CODE_SESSION_ID || undefined;
+const short = (id: string) => id.slice(0, 8);
+
 // The page's notes. A question asked on a page without notes starts a notes file there.
-const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: m.url, notes: [] };
+const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: m.url, notes: [], session };
 
 function saveWithAck(page: NotesFile, ids: string[]): void {
   page.acked = [...new Set([...(page.acked ?? []), ...ids])];
@@ -137,11 +142,15 @@ async function openPage(notes: NotesFile, browser: Browser): Promise<string> {
 }
 
 // Validates and saves a notes file for its page. Threads and handled messages live in the stored
-// copy, so they're kept when the agent's copy lacks them. Says where replies will arrive.
-function store(file: string): NotesFile {
+// copy, so they're kept when the agent's copy lacks them. Notes another session wrote are kept
+// unless --force says to replace them. Says where replies will arrive.
+function store(file: string, force: boolean): NotesFile {
   const notes = readNotes(file);
   const before = findPage(pageKey(notes.url));
-  const merged = { ...notes, acked: [...new Set([...(before?.acked ?? []), ...(notes.acked ?? [])])] };
+  if (before?.session && session && before.session !== session && !force) {
+    fail(`another agent session (${short(before.session)}) wrote the notes for ${notes.url}; pass --force to replace them`);
+  }
+  const merged = { ...notes, session: session ?? before?.session, acked: [...new Set([...(before?.acked ?? []), ...(notes.acked ?? [])])] };
   for (const note of merged.notes) note.thread ??= before?.notes.find(n => n.id === note.id)?.thread;
   console.log(`saved ${savePage(merged)}`);
   console.log(`replies: tater watch --page ${notes.url}`);
@@ -151,17 +160,17 @@ function store(file: string): NotesFile {
 // ---------- main ----------
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+  options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, force: { type: 'boolean' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
 const pages = [...new Set((values.page ?? []).map(pageKey))];
 
 switch (values.help ? 'help' : command) {
   case 'push':
-    store(args[0] ?? fail('push needs a notes file'));
+    store(args[0] ?? fail('push needs a notes file'), values.force ?? false);
     break;
   case 'open':
-    console.log(await openPage(store(args[0] ?? fail('open needs a notes file')), targetBrowser(values.browser)));
+    console.log(await openPage(store(args[0] ?? fail('open needs a notes file'), values.force ?? false), targetBrowser(values.browser)));
     break;
   case 'check': {
     const notes = readNotes(args[0] ?? fail('check needs a notes file'));
@@ -199,7 +208,8 @@ switch (values.help ? 'help' : command) {
     for (const p of loadPages((f, why) => console.log(`invalid ${f}: ${why}`))) {
       const waiting = pending(pageKey(p.url));
       const unseen = waiting.filter(m => !delivered.has(m.id)).length;
-      console.log(`page: ${p.url} (${p.notes.length} notes${waiting.length ? `, ${waiting.length} waiting, ${unseen} not yet picked up` : ''})`);
+      const owner = p.session ? `, session ${short(p.session)}${p.session === session ? ' (this one)' : ''}` : '';
+      console.log(`page: ${p.url} (${p.notes.length} notes${owner}${waiting.length ? `, ${waiting.length} waiting, ${unseen} not yet picked up` : ''})`);
     }
     if (orphans().length) console.log(`questions from pages without notes: ${orphans().length} (tater watch --all)`);
     break;

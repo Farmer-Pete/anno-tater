@@ -27,6 +27,7 @@
 | `links` | no | Arrows between two notes, drawn down the left margin: `from`, `to` (note ids), optional `label`. |
 | `glossary` | no | `term` and `def`. Every whole-word use of `term` (case-sensitive) gets a dotted underline and a hover definition. |
 | `acked` | managed | Message ids already handled. `tater reply` and `tater ack` maintain it; keep it when you edit the file. |
+| `session` | managed | The agent session that wrote the notes. `tater push` sets it and refuses to replace another session's notes without `--force`. |
 
 ## Notes
 
