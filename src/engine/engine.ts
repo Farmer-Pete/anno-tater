@@ -142,6 +142,14 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     state = { ...state, done: { ...state.done, [id]: on } };
     saveState({ done: { [id]: on } });
   }
+  const isQueued = (id: string) => state.queued?.[id] ?? false;
+  function toggleQueued(note: Note): void {
+    const on = !isQueued(note.id);
+    state = { ...state, queued: { ...state.queued, [note.id]: on } };
+    saveState({ queued: { [note.id]: on } });
+    if (cardNoteId === note.id) reopen();
+    renderPanel();
+  }
   const acked = () => new Set(data?.acked ?? []);
   // Messages waiting for an answer: the helper's list, plus ones sent since it was last read.
   let pending: Outgoing[] = [];
@@ -295,7 +303,11 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
         sendDraft({ kind: 'reply', noteId: note.id, quote: note.quote, text });
         openCard(note, range);
       }, note.id),
-      step && h('div', { class: 'row' }, h('button', { class: 'b', onclick: () => toggleDone(note) }, isDone(note.id) ? 'Mark not done' : 'Mark done')));
+      h('div', { class: 'row' },
+        // Queued notes become comments in a GitHub review that tater export builds; it needs the helper to see them.
+        twoWay && !note.posted && h('button', { class: 'b', title: 'tater export --github-review turns queued notes into a review', onclick: () => toggleQueued(note) },
+          isQueued(note.id) ? 'Unqueue comment' : 'Queue as review comment'),
+        step && h('button', { class: 'b', onclick: () => toggleDone(note) }, isDone(note.id) ? 'Mark not done' : 'Mark done')));
     ui.append(card);
     cardNoteId = note.id;
     cardStop = range ? float(card, rangeRef(range)) : float(card, panelRow(note.id), 'left-start');
@@ -627,6 +639,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
           : h('span', { class: 'dot', style: `background:${kindOf(note).color}` }),
         h('span', { class: 'label', style: done ? 'text-decoration:line-through;color:#656d76' : '' }, inline(note.title ?? whereText(note))),
         unread.has(note.id) && h('span', { class: 'badge' }, 'new'),
+        isQueued(note.id) && !note.posted && h('span', { class: 'badge queued', title: 'Queued as a review comment' }, 'queued'),
         note.posted && h('a', { class: 'badge posted', href: note.posted, target: '_blank', rel: 'noopener', title: 'Open the posted comment',
           onclick: (e: Event) => e.stopPropagation() }, 'posted'));
       el.dataset.id = note.id;

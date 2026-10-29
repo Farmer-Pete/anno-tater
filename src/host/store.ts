@@ -11,7 +11,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
-import type { PageState } from '../shared/protocol.ts';
+import { mergeState, type PageState } from '../shared/protocol.ts';
 
 export const dataDir = () =>
   process.env.ANNO_TATER_HOME ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'anno-tater');
@@ -83,10 +83,9 @@ export function readState(page: string): PageState {
   }
 }
 
-// Steps merge per id; the read list is replaced, since the browser sends the whole set.
 export function saveState(page: string, patch: Partial<PageState>): void {
   const now = readState(page);
-  writeAtomic(stateFile(page), JSON.stringify({ ...now, ...patch, done: { ...now.done, ...patch.done } }));
+  writeAtomic(stateFile(page), JSON.stringify(mergeState(now, patch)));
 }
 
 // ---------- messages ----------

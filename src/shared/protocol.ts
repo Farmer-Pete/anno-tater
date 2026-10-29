@@ -19,8 +19,16 @@ export interface PageSummary {
 export interface PageState {
   done: Record<string, boolean>;
   seen?: string[]; // "<noteId>#<index>" of Claude's replies; absent until the page is first shown
+  queued?: Record<string, boolean>; // notes the person queued as review comments (tater export)
   placement?: Placement;
 }
+
+// Applies a change to the stored state: ticked steps and queued notes merge per note; everything
+// else is replaced, since the page sends it whole.
+export const mergeState = (now: PageState, patch: Partial<PageState>): PageState => ({
+  ...now, ...patch, done: { ...now.done, ...patch.done },
+  ...(now.queued || patch.queued ? { queued: { ...now.queued, ...patch.queued } } : {}),
+});
 
 // How the notes anchored the last time a browser drew the page, for tater status.
 export interface Placement {

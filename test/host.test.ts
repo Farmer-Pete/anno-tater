@@ -282,6 +282,42 @@ test('mark --posted records the comment, and a later push keeps it', () => {
   assert.throws(() => tater(dir, 'mark', 'nope', '--posted', comment), /no note nope/);
 });
 
+test('export --github-review turns queued notes into a pending review', async () => {
+  const dir = home();
+  const url = 'https://github.com/o/r/pull/7/changes';
+  const file = join(dir, 'notes.json');
+  writeFileSync(file, JSON.stringify({ url, commit: 'a'.repeat(40), notes: [
+    { id: 'l1', kind: 'issue', anchor: { file: 'src/app.py', line: 552 }, title: 'Off by one', body: 'Use `<=`.' },
+    { id: 'l2', kind: 'caution', anchor: { file: 'src/app.py', line: 10, endLine: 14, side: 'LEFT' }, title: 'Dead block' },
+    { id: 'q1', kind: 'info', quote: 'the summary', title: 'Not on a line' },
+    { id: 'p1', kind: 'info', anchor: { file: 'a', line: 1 }, title: 'Already posted', posted: 'https://github.com/o/r/pull/7#discussion_r1' },
+    { id: 'n1', kind: 'info', anchor: { file: 'a', line: 2 }, title: 'Not queued' },
+  ] }));
+  tater(dir, 'push', file);
+  assert.throws(() => tater(dir, 'export', '--github-review', '--page', url), /no notes are queued/);
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    h.send({ type: 'state', page: pageKey(url), state: { queued: { l1: true, l2: true, q1: true, p1: true } } });
+    h.send({ type: 'state', page: pageKey(url), state: { queued: { n1: false } } }); // merges, doesn't replace
+    await eventually(async () => {
+      h.child.stdin.write(encode({ type: 'get', page: pageKey(url) }));
+      const m = await h.waitFor('page');
+      return m.type === 'page' ? m.state.queued : null;
+    }, { l1: true, l2: true, q1: true, p1: true, n1: false });
+  } finally {
+    h.child.kill();
+  }
+  assert.deepEqual(JSON.parse(tater(dir, 'export', '--github-review', '--page', url)), {
+    commit_id: 'a'.repeat(40),
+    body: '> the summary\n\n**Not on a line**',
+    comments: [
+      { path: 'src/app.py', line: 552, side: 'RIGHT', body: '**Off by one**\n\nUse `<=`.' },
+      { path: 'src/app.py', line: 14, side: 'LEFT', start_line: 10, start_side: 'LEFT', body: '**Dead block**' },
+    ],
+  });
+});
+
 // Retries until read() returns want, for changes that arrive through file watching.
 async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
   for (let i = 0; i < 50; i++) {

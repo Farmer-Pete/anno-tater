@@ -23,4 +23,6 @@ Run the CLI as `node <this skill's base directory>/bin/tater.mjs`, called `tater
 
    Done when `tater watch --once --page <url>` prints nothing.
 
+On a GitHub pull request, the person can queue notes as review comments from their cards. `tater export --github-review --page <url> > review.json` builds a review from them: notes with an `anchor` become line comments, the rest go in the review body. Show the person the comments, then post with the `gh api` command it prints; GitHub keeps the review pending until they submit it. Record each posted comment with `tater mark <id> --posted <url>`.
+
 To change a note's wording, edit the file and `tater push` it again. Keep each note's `id` stable so threads, ticked steps, and read state carry over; the stored copy keeps the threads. A page has one owner: `tater push` and `tater open` refuse to replace notes another Claude Code session wrote. Ask the person before taking a page over with `--force`; the two sessions would still share its replies.
