@@ -196,6 +196,18 @@ test('a reply from the card goes out with the note id and its line breaks', asyn
   assert.deepEqual(sent.map(m => [m.kind, m.noteId, m.text]), [['reply', 'n', '> quoted\nquestion']]);
 });
 
+test('a tall card stays on screen: it caps its height to the room it has and scrolls', async () => {
+  const filler = Array.from({ length: 12 }, (_, i) => `<p>Log entry ${i}: levels normal.</p>`).join('');
+  const body = Array.from({ length: 30 }, (_, i) => `Paragraph ${i} of a long explanation.`).join('\n\n');
+  const page = await open(filler + PROSE + filler, { notes: [{ id: 'n', kind: 'info', quote: 'Lock out the breaker.', title: 'Long', body }] });
+  await page.evaluate(() => { const li = [...document.querySelectorAll('li')].at(-1); li?.scrollIntoView({ block: 'center' }); });
+  await clickText(page, 'Lock out the breaker.');
+  const card = await shadow(page, '.card').boundingBox();
+  assert.ok(card);
+  assert.ok(card.y >= 0 && card.y + card.height <= 800, `card spans ${Math.round(card.y)} to ${Math.round(card.y + card.height)} in an 800 px viewport`);
+  assert.ok(await shadow(page, '.card').evaluate(c => c.scrollHeight > c.clientHeight), 'the rest of the body scrolls inside the card');
+});
+
 test('a page note opens its card beside its panel row, on screen', async () => {
   const page = await open(PROSE, { notes: [{ id: 's', kind: 'info', title: 'Summary', body: 'About the whole page.' }] });
   await shadow(page, '.item[data-id="s"]').click();
