@@ -51,12 +51,18 @@ export function textRange(el: Element): Range | null {
   return len ? rangeAt(idx, 0, len) : null;
 }
 
-// The best visible match for a note's quote, or null when the quote isn't on the page. matches
-// counts every place the quote occurs.
-export function anchor(idx: TextIndex, note: { quote: string; prefix?: string; suffix?: string }): { range: Range; ambiguous: boolean; matches: number } | null {
+// The best visible match for a note's quote, or null when the quote isn't on the page. With an
+// endQuote, the range runs on through the first endQuote after the quote. matches counts every
+// place the quote occurs.
+export function anchor(idx: TextIndex, note: { quote: string; endQuote?: string; prefix?: string; suffix?: string }): { range: Range; ambiguous: boolean; matches: number } | null {
   const { hits, ambiguous } = findQuote(idx.text, note);
-  const len = norm(note.quote).length;
-  const ranges = hits.map(i => rangeAt(idx, i, len)).filter((r): r is Range => r !== null);
+  const len = norm(note.quote).length, end = norm(note.endQuote);
+  const through = (i: number) => {
+    if (!end) return rangeAt(idx, i, len);
+    const e = idx.text.indexOf(end, i + len);
+    return e < 0 ? null : rangeAt(idx, i, e + end.length - i);
+  };
+  const ranges = hits.map(through).filter((r): r is Range => r !== null);
   const pick = ranges.find(visible) ?? ranges[0];
   return pick ? { range: pick, ambiguous, matches: hits.length } : null;
 }
