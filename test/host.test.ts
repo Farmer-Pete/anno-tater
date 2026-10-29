@@ -157,6 +157,30 @@ test('reply --note answers every message waiting on that note, in order', async 
   assert.throws(() => tater(dir, 'reply', '--note', 'n1', 'again'), /no message is waiting on note n1/);
 });
 
+test('one watch follows several pages and skips the rest', async () => {
+  const { dir } = pushed();
+  const other = { ...notes, url: 'https://example.com/other' }, third = { ...notes, url: 'https://example.com/third' };
+  for (const [name, n] of [['other.json', other], ['third.json', third]] as const) {
+    writeFileSync(join(dir, name), JSON.stringify(n));
+    tater(dir, 'push', join(dir, name));
+  }
+  const w = firstLine(dir, '--page', third.url, '--page', other.url);
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    await new Promise(r => setTimeout(r, 300));
+    const say = (id: string, url: string) => h.send({ type: 'send', message: { id, at: '', page: pageKey(url), url, kind: 'reply', noteId: 'n1', text: id } satisfies Outgoing });
+    say('not-watched', notes.url);
+    await h.waitFor('sent');
+    say('watched', other.url);
+    assert.equal((JSON.parse(await w.line) as Outgoing).id, 'watched');
+  } finally {
+    h.child.kill(); w.stop();
+  }
+  const once = tater(dir, 'watch', '--page', other.url, '--page', third.url, '--once');
+  assert.deepEqual(once.trim().split('\n').map(l => (JSON.parse(l) as Outgoing).id), ['watched']);
+});
+
 // Retries until read() returns want, for changes that arrive through file watching.
 async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
   for (let i = 0; i < 50; i++) {
