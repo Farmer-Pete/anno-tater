@@ -63,6 +63,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 - `url` is the page. Its address without the scheme or `#fragment` is the page key. A fragment route (`#/settings`, `#!/settings`) stays in the key.
 - `kind` is one of `issue`, `caution`, `agree`, `info`, `step`. Steps also have `step: <number>`.
 - `decorate` is one of `box`, `circle`, `underline`, `bracket`.
+- After each draw the page saves a placement report in its state (placed count, unplaced and ambiguous notes, and a hash of the anchors it drew from), which `tater status --page` prints for the agent.
 - Anchoring follows the W3C TextQuoteSelector: an exact quote with optional prefix and suffix. A quote that isn't found goes in the panel's "Couldn't place" list. Nothing is placed by a guess. A note without a quote is about the whole page and sits at the top of the panel.
 
 ## Rendering

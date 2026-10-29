@@ -7,8 +7,8 @@
 import { autoUpdate, computePosition, flip, offset, shift, type VirtualElement } from '@floating-ui/dom';
 import { getBoxToBoxArrow } from 'perfect-arrows';
 import { annotate } from 'rough-notation';
-import { norm, pageKey as keyOf, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
-import type { PageState } from '../shared/protocol.ts';
+import { anchorsKey, norm, pageKey as keyOf, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import type { PageState, Placement } from '../shared/protocol.ts';
 import { anchor, buildIndex, context, findTerms } from './anchor.ts';
 import { h, inline, md, svg } from './dom.ts';
 import { POTATO } from './potato.ts';
@@ -41,7 +41,7 @@ export interface Engine {
 
 type RoughAnnotation = ReturnType<typeof annotate>;
 type RoughAnnotationConfig = Parameters<typeof annotate>[1];
-interface Placed { note: Note; range: Range; ambiguous: boolean }
+interface Placed { note: Note; range: Range; ambiguous: boolean; matches: number }
 interface TermHit { term: Term; range: Range }
 interface Mark { p: Placed; proxy: HTMLDivElement; ann: RoughAnnotation | null; type: string; last: string }
 
@@ -614,10 +614,29 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       terms = findTerms(idx, data.glossary);
     }
     paint(); buildMarks(); renderPins(); renderPanel();
+    reportPlacement();
     marksLayer.classList.toggle('off', hidden());
     requestAnimationFrame(layout);
     reopen();
     updateToast();
+  }
+
+  // Tells the agent (through tater status) what placed. Only a change is saved: each save moves the
+  // page's rev, which redraws the page and would report again.
+  let lastReport = '';
+  function reportPlacement(): void {
+    if (!data) return;
+    const report: Omit<Placement, 'at'> = {
+      notes: anchorsKey(data),
+      placed: placed.length,
+      onPage: pageNotes.length,
+      unplaced: unplaced.map(n => ({ id: n.id, quote: n.quote ?? '' })),
+      ambiguous: placed.filter(p => p.ambiguous).map(p => ({ id: p.note.id, quote: p.note.quote ?? '', matches: p.matches })),
+    };
+    const key = JSON.stringify(report);
+    if (key === lastReport) return;
+    lastReport = key;
+    saveState({ placement: { at: new Date().toISOString(), ...report } });
   }
 
   // Pages like GitHub swap out the nodes under a range after load; re-anchor when that happens.

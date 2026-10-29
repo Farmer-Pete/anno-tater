@@ -2,11 +2,11 @@
 import { mkdirSync, readFileSync, watch } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { dirname, resolve } from 'node:path';
-import { encodeFragment, glossaryProblems, pageKey, parseNotes, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
-import { dataDir, findPage, loadPages, markDelivered, pageDir, pagesDir, pending, readAllInboxes, readDelivered, savePage } from '../host/store.ts';
+import { dataDir, findPage, loadPages, markDelivered, pageDir, pagesDir, pending, readAllInboxes, readDelivered, readState, savePage } from '../host/store.ts';
 
 const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
@@ -19,7 +19,8 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater reply --note ID <text|->            Answer every message waiting on a note (--page URL if the id repeats)
   tater ack <message-id>...                 Mark messages handled without answering
   tater check <notes.json>                  Validate a notes file
-  tater status                              Pages, helper install state, and waiting messages
+  tater status [--page URL...]              Pages, helper install state, and waiting messages
+                                            (--page: also which notes placed, didn't, or matched more than once)
   tater install [--browser B]               Register the helper with your browsers (needed for replies)
   tater uninstall [--browser B]
 
@@ -144,6 +145,17 @@ function orphans(): Outgoing[] {
   return readAllInboxes().filter(m => !withNotes.has(m.page));
 }
 
+// What the page placed the last time a browser drew it.
+function placementLines(p: NotesFile): string[] {
+  const r = readState(pageKey(p.url)).placement;
+  if (!r) return ['placement: not reported yet; open the page in a browser that has the helper'];
+  const lines = [`placed: ${r.placed}${r.onPage ? `, plus ${r.onPage} about the whole page` : ''} (drawn ${r.at})`];
+  if (r.notes !== anchorsKey(p)) lines.push('stale: the notes changed since the page last drew them; reload the page');
+  for (const u of r.unplaced) lines.push(`unplaced: ${u.id} ${JSON.stringify(u.quote)}`);
+  for (const a of r.ambiguous) lines.push(`ambiguous: ${a.id} ${JSON.stringify(a.quote)} (${a.matches} matches; add prefix or suffix)`);
+  return lines;
+}
+
 // ---------- opening pages ----------
 // With the helper, the browser fetches the notes itself, so tater just opens the page. Without
 // it, the notes ride in the fragment of the extension's intake page.
@@ -223,11 +235,14 @@ switch (values.help ? 'help' : command) {
     console.log(`data: ${dataDir()}`);
     console.log(`default browser: ${defaultBrowser() ?? 'not supported'}`);
     console.log(`helper: ${BROWSERS.map(b => `${b} ${installed(b) ? 'installed' : 'not installed'}`).join(', ')}`);
-    for (const p of loadPages((f, why) => console.log(`invalid ${f}: ${why}`))) {
+    const shown = loadPages((f, why) => console.log(`invalid ${f}: ${why}`)).filter(p => !pages.length || pages.includes(pageKey(p.url)));
+    if (pages.length && shown.length < pages.length) fail('no notes stored for some of those pages');
+    for (const p of shown) {
       const waiting = pending(pageKey(p.url));
       const unseen = waiting.filter(m => !delivered.has(m.id)).length;
       const owner = p.session ? `, session ${short(p.session)}${p.session === session ? ' (this one)' : ''}` : '';
       console.log(`page: ${p.url} (${p.notes.length} notes${owner}${waiting.length ? `, ${waiting.length} waiting, ${unseen} not yet picked up` : ''})`);
+      if (pages.length) for (const line of placementLines(p)) console.log(`  ${line}`);
     }
     if (orphans().length) console.log(`questions from pages without notes: ${orphans().length} (tater watch --all)`);
     break;

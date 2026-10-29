@@ -150,6 +150,15 @@ export function originPattern(url: string): string | null {
 
 // ---------- text anchoring (the DOM-free half) ----------
 
+// A short fingerprint of everything anchoring depends on, so a placement report can be matched to
+// the notes it was made from. FNV-1a, as hex.
+export function anchorsKey(notes: Pick<NotesFile, 'scope' | 'notes'>): string {
+  const text = JSON.stringify([notes.scope, notes.notes.map(n => [n.id, n.quote, n.prefix, n.suffix])]);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, '0');
+}
+
 export const norm = (s: string | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
 // Offsets in `text` where `quote` occurs, best first: by how much of the prefix and suffix

@@ -44,13 +44,14 @@ function rangeAt(idx: TextIndex, start: number, len: number): Range | null {
 
 const visible = (r: Range) => r.getClientRects().length > 0;
 
-// The best visible match for a note's quote, or null when the quote isn't on the page.
-export function anchor(idx: TextIndex, note: { quote: string; prefix?: string; suffix?: string }): { range: Range; ambiguous: boolean } | null {
+// The best visible match for a note's quote, or null when the quote isn't on the page. matches
+// counts every place the quote occurs.
+export function anchor(idx: TextIndex, note: { quote: string; prefix?: string; suffix?: string }): { range: Range; ambiguous: boolean; matches: number } | null {
   const { hits, ambiguous } = findQuote(idx.text, note);
   const len = norm(note.quote).length;
   const ranges = hits.map(i => rangeAt(idx, i, len)).filter((r): r is Range => r !== null);
   const pick = ranges.find(visible) ?? ranges[0];
-  return pick ? { range: pick, ambiguous } : null;
+  return pick ? { range: pick, ambiguous, matches: hits.length } : null;
 }
 
 // Every visible use of each glossary term, as a whole word.

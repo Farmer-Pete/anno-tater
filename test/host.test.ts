@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { decoder, encode, MAX_TO_BROWSER } from '../src/host/framing.ts';
-import { pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
+import { anchorsKey, pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
 import type { FromHost } from '../src/shared/protocol.ts';
 
 const home = () => mkdtempSync(join(tmpdir(), 'anno-tater-'));
@@ -229,6 +229,29 @@ test('shared glossary files merge into the page glossary, and a term the page de
   writeFileSync(join(dir, 'bad.json'), JSON.stringify([{ term: 'X' }]));
   writeFileSync(file, JSON.stringify({ ...notes, glossaryFiles: ['bad.json'] }));
   assert.throws(() => tater(dir, 'check', file), /bad\.json\[0\] needs term and def/);
+});
+
+test('status --page prints what the page last placed, and says when the notes moved on', async () => {
+  const { dir, file } = pushed();
+  assert.match(tater(dir, 'status', '--page', notes.url), /placement: not reported yet/);
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    const placement = { at: '2026-10-29T12:00:00.000Z', notes: anchorsKey(notes), placed: 16, onPage: 1,
+      unplaced: [{ id: 'c3', quote: 'switch_id = int(raw[:2]) * 100' }], ambiguous: [{ id: 't5', quote: 'More than one match', matches: 2 }] };
+    h.send({ type: 'state', page, state: { placement } });
+    await eventually(async () => (await h.get())?.state.placement?.placed, 16);
+  } finally {
+    h.child.kill();
+  }
+  const out = tater(dir, 'status', '--page', notes.url);
+  assert.match(out, /placed: 16, plus 1 about the whole page/);
+  assert.match(out, /unplaced: c3 "switch_id = int\(raw\[:2\]\) \* 100"/);
+  assert.match(out, /ambiguous: t5 "More than one match" \(2 matches; add prefix or suffix\)/);
+  assert.doesNotMatch(out, /stale/);
+  writeFileSync(file, JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], quote: 'new text' }] }));
+  tater(dir, 'push', file);
+  assert.match(tater(dir, 'status', '--page', notes.url), /stale: the notes changed/);
 });
 
 // Retries until read() returns want, for changes that arrive through file watching.
