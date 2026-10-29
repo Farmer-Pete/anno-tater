@@ -36,6 +36,10 @@ export const UI_CSS = `
   .card { width: 420px; max-height: 65vh; overflow: auto; padding: 12px 14px; pointer-events: auto; }
   .card h3 { margin: 2px 0 6px; font-size: 15px !important; font-weight: 600 !important; }
   .card p { margin: 6px 0; } .card ul { margin: 6px 0; padding-left: 20px; }
+  .table { overflow-x: auto; margin: 6px 0; }
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #d0d7de; padding: 3px 8px; text-align: left; vertical-align: top; }
+  th { background: #eaeef2; font-weight: 600 !important; }
   strong { font-weight: 700 !important; }
   code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace !important; background: #eff1f3; padding: 1px 4px; border-radius: 4px; }
   a { color: #0969da !important; }
