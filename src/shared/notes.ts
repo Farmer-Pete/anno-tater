@@ -24,9 +24,11 @@ export interface Note {
   thread?: Message[];
 }
 
+// A link joins two notes: on this page (an arrow down the margin), or on another page (a row in
+// the note's card that opens that page at the note).
 interface Link {
   from: string;
-  to: string;
+  to: string | { url: string; note: string };
   label?: string;
 }
 
@@ -109,7 +111,8 @@ export function validate(v: unknown): Problems {
     if (Array.isArray(v.links)) {
       const known = new Set(ids);
       v.links.forEach((l, i) => {
-        if (!isObj(l) || !known.has(l.from) || !known.has(l.to)) problems.push(`links[${i}] must join two note ids`);
+        const away = isObj(l) && isObj(l.to) && str(l.to.url) && originPattern(l.to.url) !== null && str(l.to.note) && l.to.note !== '';
+        if (!isObj(l) || !known.has(l.from) || !(known.has(l.to) || away)) problems.push(`links[${i}] must join a note id to a note id, or to { url, note } on another page`);
       });
     } else if (v.links !== undefined) problems.push('links must be a list');
   }

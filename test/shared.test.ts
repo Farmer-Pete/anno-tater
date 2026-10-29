@@ -28,7 +28,7 @@ test('validation names each problem', () => {
   assert.ok(problems.some(p => p.startsWith('notes[0].quote')));
   assert.ok(problems.some(p => p.startsWith('notes[1].step')));
   assert.ok(problems.includes('note ids repeat: a'));
-  assert.ok(problems.includes('links[0] must join two note ids'));
+  assert.ok(problems.includes('links[0] must join a note id to a note id, or to { url, note } on another page'));
 });
 
 test('a note without a quote is a valid note about the whole page', () => {
@@ -100,4 +100,11 @@ test('commit must look like a SHA', () => {
   const page = { url: 'https://github.com/o/r/pull/1', notes: [] };
   assert.deepEqual(validate({ ...page, commit: 'cbfda8b' }), []);
   assert.deepEqual(validate({ ...page, commit: 'main' }), ['commit must be a commit SHA (7 to 40 hex digits)']);
+});
+
+test('a link can point at a note on another page', () => {
+  const page = { url: 'https://github.com/o/r/pull/1', notes: [{ id: 't6', kind: 'info', quote: 'x' }] };
+  assert.deepEqual(validate({ ...page, links: [{ from: 't6', to: { url: 'https://github.com/o/r/pull/1/changes', note: 'f-type' } }] }), []);
+  assert.deepEqual(validate({ ...page, links: [{ from: 't6', to: { url: 'ftp://x', note: 'f' } }] }),
+    ['links[0] must join a note id to a note id, or to { url, note } on another page']);
 });

@@ -25,7 +25,7 @@
 | `commit` | no | On a GitHub pull request, the head commit the notes were written for (`gh pr view <n> --json headRefOid -q .headRefOid`). When the author pushes more commits, the panel warns that the notes were written for an older commit, and `tater status --page` says so too. |
 | `scope` | no | CSS selector for the page's main content (`article.markdown-body` on GitHub). Quotes and terms outside it are ignored, which keeps nav bars and sidebars out. Default: `main`, else `body`. |
 | `notes` | yes | The notes, below. |
-| `links` | no | Arrows between two notes, drawn down the left margin: `from`, `to` (note ids), optional `label`. |
+| `links` | no | `from` (a note id), `to`, optional `label`. With `to` a note id on this page, an arrow down the left margin joins the two. With `to` as `{ "url": "…", "note": "…" }`, a note on another page, the `from` note's card lists it under "See also"; clicking opens that page in a new tab and scrolls to the note. |
 | `glossary` | no | `term` and `def`. Every whole-word use of `term` (case-sensitive) gets a dotted underline and a hover definition. |
 | `glossaryFiles` | no | Shared glossaries for a review that spans several pages, as paths relative to this notes file. Each file is a list of terms, or any object with a `glossary` list, such as another notes file. `tater push` and `tater open` merge them in; a term in this file's own `glossary` wins. Push each page again after editing a shared file. |
 | `acked` | managed | Message ids already handled. `tater reply` and `tater ack` maintain it; keep it when you edit the file. |
