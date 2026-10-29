@@ -17,6 +17,7 @@ A browser extension (Chrome, Zen, Firefox Developer Edition) that draws an agent
 ## Commands
 
 - `npm run check`: types, lint, dead code, duplication, suppression scan, tests, build. The pre-commit hook runs it; turn the hook on with `git config core.hooksPath .githooks`.
+- `npm run browsers`: download headless Chromium once. `test/browser.test.ts` runs the page engine in it (anchoring, re-anchoring, diff lines, drawing, cards); `npm run check` needs it.
 - `npm run build`: `dist/chrome`, `dist/firefox` and its unsigned `dist/anno-tater.xpi`, and `skill/bin`.
 - `./install.sh`: build, then install the skill and helper on this machine.
 - `npm run release`: publish GitHub release `v<version>` with the files `install.sh` downloads. Bump `package.json`'s version first.

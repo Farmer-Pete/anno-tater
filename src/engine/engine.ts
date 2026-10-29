@@ -609,12 +609,19 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     p.range.startContainer.parentElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     setTimeout(() => openCard(p.note, p.range), 350);
   }
-  // A page note's row in the panel, looked up on every read since the panel redraws often. A
-  // collapsed panel opens so the card has a row to sit beside.
+  // Where a page note's card sits: level with its row in the panel, against the panel's edge (the
+  // row is inset, so beside the row would overlap the panel). Looked up on every read since the
+  // panel redraws often. A collapsed panel opens so the card has a row to sit beside.
   function panelRow(id: string): VirtualElement {
     if (!panelOpen()) { store.set('panel-open', true); renderPanel(); }
     const row = () => panel.querySelector(`.item[data-id="${CSS.escape(id)}"]`) ?? panel;
-    return { getBoundingClientRect: () => row().getBoundingClientRect(), contextElement: panel };
+    return {
+      getBoundingClientRect: () => {
+        const p = panel.getBoundingClientRect(), r = row().getBoundingClientRect();
+        return new DOMRect(p.left, r.top, p.width, r.height);
+      },
+      contextElement: panel,
+    };
   }
 
   function renderPanel(): void {

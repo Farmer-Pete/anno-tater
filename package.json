@@ -11,7 +11,8 @@
     "tater": "node --disable-warning=ExperimentalWarning src/cli/tater.ts",
     "test": "node --test",
     "check": "tsc && tsc -p src/extension && oxlint --deny-warnings && knip && jscpd --exit-code --reporters console src && sh scripts/no-suppressions.sh && node --test && node scripts/build.ts",
-    "release": "node scripts/release.ts"
+    "release": "node scripts/release.ts",
+    "browsers": "playwright install --only-shell chromium"
   },
   "engines": {
     "node": ">=26"
@@ -28,6 +29,7 @@
     "jscpd": "5.4.0",
     "knip": "6.40.0",
     "oxlint": "1.87.0",
+    "playwright": "1.64.1",
     "typescript": "7.0.2"
   },
   "overrides": {
