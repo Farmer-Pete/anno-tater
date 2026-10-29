@@ -43,6 +43,14 @@ export const UI_CSS = `
   strong { font-weight: 700 !important; }
   code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace !important; background: #eff1f3; padding: 1px 4px; border-radius: 4px; }
   a { color: #0969da !important; }
+  pre.code { margin: 6px 0; padding: 8px 10px; background: #f6f8fa; border: 1px solid #d8dee4; border-radius: 6px; overflow-x: auto; }
+  pre.code code { display: block; min-width: max-content; padding: 0; background: none; white-space: pre; }
+  pre.code span { font: inherit !important; }
+  pre.diff { padding: 8px 0; } pre.diff code > * { display: block; padding: 0 10px; }
+  .tk-c { color: #6e7781 !important; font-style: italic; } .tk-s { color: #0a3069 !important; }
+  .tk-n { color: #0550ae !important; } .tk-k { color: #cf222e !important; }
+  .tk-add { background: #dafbe1; color: #116329 !important; } .tk-del { background: #ffebe9; color: #82071e !important; }
+  .tk-hunk { color: #8250df !important; }
   .x { position: sticky; top: 0; float: right; border: 0; background: none; cursor: pointer; font-size: 16px !important; color: #656d76 !important; }
   .section { border-top: 1px solid #d8dee4; margin-top: 10px; padding-top: 8px; }
   .section p { margin: 4px 0; }
