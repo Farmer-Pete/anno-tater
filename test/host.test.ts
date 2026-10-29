@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -135,6 +135,26 @@ test('a running watch prints a message as it arrives, for one page or every page
   } finally {
     h.child.kill(); one.stop(); all.stop();
   }
+});
+
+test('reply --note answers every message waiting on that note, in order', async () => {
+  const { dir } = pushed();
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    for (const [id, text] of [['m1', 'first?'], ['m2', 'and second?']] as const) {
+      h.send({ type: 'send', message: { id, at: '', page, url: notes.url, kind: 'reply', noteId: 'n1', text } satisfies Outgoing });
+      await h.waitFor('sent');
+    }
+  } finally {
+    h.child.kill();
+  }
+  assert.match(tater(dir, 'reply', '--note', 'n1', 'both answered'), /answered on n1 \(2 messages\)/);
+  const [folder] = readdirSync(join(dir, 'data'));
+  const saved = JSON.parse(readFileSync(join(dir, 'data', folder ?? '', 'page.json'), 'utf8')) as NotesFile;
+  assert.deepEqual(saved.notes[0]?.thread, [{ from: 'you', text: 'first?' }, { from: 'you', text: 'and second?' }, { from: 'claude', text: 'both answered' }]);
+  assert.equal(tater(dir, 'watch', '--page', notes.url, '--once').trim(), '');
+  assert.throws(() => tater(dir, 'reply', '--note', 'n1', 'again'), /no message is waiting on note n1/);
 });
 
 // Retries until read() returns want, for changes that arrive through file watching.

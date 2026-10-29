@@ -13,6 +13,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater push <notes.json>                   Store or update notes; pages open with the helper redraw live
   tater watch --page URL [--once]           Print new messages from a page, one JSON line each (--all: every page)
   tater reply <message-id> <text|->         Answer a message in its thread ("-" reads the text from stdin)
+  tater reply --note ID <text|->            Answer every message waiting on a note (--page URL if the id repeats)
   tater ack <message-id>...                 Mark messages handled without answering
   tater check <notes.json>                  Validate a notes file
   tater status                              Pages, helper install state, and waiting messages
@@ -50,7 +51,19 @@ async function readText(arg: string | undefined): Promise<string> {
   return text.trim();
 }
 
-function reply(m: Outgoing, text: string): string {
+// The messages still waiting on a note, oldest first. A note id can repeat across pages; --page picks one.
+function waitingOn(noteId: string, page: string | null): Outgoing[] {
+  const all = page ? pending(page) : loadPages().flatMap(p => pending(pageKey(p.url)));
+  const ms = all.filter(m => m.noteId === noteId);
+  const pages = new Set(ms.map(m => m.page));
+  if (pages.size > 1) fail(`note ${noteId} has messages waiting on ${pages.size} pages; add --page URL`);
+  return ms.length ? ms : fail(`no message is waiting on note ${noteId}`);
+}
+
+// Answers one message, or several on the same note: their texts join the thread in order, then the answer.
+function reply(ms: Outgoing[], text: string): string {
+  const [m] = ms;
+  if (!m) return fail('nothing to answer');
   const page = pageFor(m);
   if (m.kind === 'ask') {
     // A question about a selection becomes a new note anchored where the person selected.
@@ -62,10 +75,11 @@ function reply(m: Outgoing, text: string): string {
     page.notes.push(note);
   } else {
     const note = page.notes.find(n => n.id === m.noteId) ?? fail(`note ${m.noteId} is not in the notes file any more`);
-    note.thread = [...(note.thread ?? []), ...(m.text ? [{ from: 'you' as const, text: m.text }] : []), { from: 'claude' as const, text }];
+    const yours = ms.flatMap(x => (x.text ? [{ from: 'you' as const, text: x.text }] : []));
+    note.thread = [...(note.thread ?? []), ...yours, { from: 'claude' as const, text }];
   }
-  saveWithAck(page, [m.id]);
-  return m.kind === 'ask' ? `added note q-${m.id}` : `answered on ${m.noteId}`;
+  saveWithAck(page, ms.map(x => x.id));
+  return m.kind === 'ask' ? `added note q-${m.id}` : `answered on ${m.noteId}${ms.length > 1 ? ` (${ms.length} messages)` : ''}`;
 }
 
 // Prints every message not yet answered or acked, then follows the inbox. Printing marks a
@@ -131,7 +145,7 @@ function store(file: string): NotesFile {
 // ---------- main ----------
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { page: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+  options: { page: { type: 'string' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
 
@@ -152,8 +166,13 @@ switch (values.help ? 'help' : command) {
     watchInbox(values.page ? pageKey(values.page) : null, values.once ?? false);
     break;
   case 'reply': {
-    const m = findMessage(args[0] ?? fail('reply needs a message id'));
-    console.log(reply(m, await readText(args[1])));
+    if (values.note) {
+      const ms = waitingOn(values.note, values.page ? pageKey(values.page) : null);
+      console.log(reply(ms, await readText(args[0])));
+    } else {
+      const m = findMessage(args[0] ?? fail('reply needs a message id, or --note ID'));
+      console.log(reply([m], await readText(args[1])));
+    }
     break;
   }
   case 'ack': {
