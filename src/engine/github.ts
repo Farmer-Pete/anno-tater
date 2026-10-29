@@ -19,9 +19,29 @@ export function diffLine(file: string, line: number, side: 'LEFT' | 'RIGHT' = 'R
   const table = [...document.querySelectorAll('table[aria-label^="Diff for: "]')].find(t => t.getAttribute('aria-label') === `Diff for: ${file}`);
   const s = side.toLowerCase();
   for (const cell of table?.querySelectorAll(`td[data-diff-side="${s}"][data-line-number="${line}"]`) ?? []) {
-    const row = cell.closest('tr');
-    const text = row?.querySelector(`td.diff-text-cell[data-diff-side="${s}"]`) ?? row?.querySelector('td.diff-text-cell');
-    if (text) return text.querySelector('.diff-text-inner') ?? text;
+    const text = rowText(cell.closest('tr'), s);
+    if (text) return text;
   }
   return null;
+}
+
+// Every line's text from one diff line through another, in page order. In the unified view that
+// includes the other side's lines between them; in the split view, only this side's.
+export function diffLines(file: string, from: number, to: number, side: 'LEFT' | 'RIGHT' = 'RIGHT'): Element[] {
+  const first = diffLine(file, from, side), last = diffLine(file, to, side);
+  if (!first || !last) return [];
+  const out: Element[] = [];
+  for (const row of first.closest('table')?.querySelectorAll('tr') ?? []) {
+    const text = rowText(row, side.toLowerCase());
+    if (text === first || (out.length && text)) out.push(text as Element);
+    if (text === last && out.length) return out;
+  }
+  return [];
+}
+
+// A diff row's code: its one text cell (unified view), or the given side's (split view).
+function rowText(row: Element | null, side: string): Element | null {
+  const cells = [...row?.querySelectorAll('td.diff-text-cell') ?? []];
+  const cell = cells.length > 1 ? cells.find(c => c.getAttribute('data-diff-side') === side) : cells[0];
+  return cell ? cell.querySelector('.diff-text-inner') ?? cell : null;
 }

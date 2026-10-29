@@ -11,7 +11,7 @@ import { anchorsKey, isPageNote, norm, pageKey as keyOf, whereText, type Kind, t
 import type { PageState, Placement } from '../shared/protocol.ts';
 import { anchor, buildIndex, context, findTerms, textRange } from './anchor.ts';
 import { h, inline, md, svg } from './dom.ts';
-import { diffLine, headCommit } from './github.ts';
+import { diffLine, diffLines, headCommit } from './github.ts';
 import { POTATO } from './potato.ts';
 import { ACCENT, KINDS, PAGE_CSS, UI_CSS } from './styles.ts';
 
@@ -43,7 +43,9 @@ export interface Engine {
 
 type RoughAnnotation = ReturnType<typeof annotate>;
 type RoughAnnotationConfig = Parameters<typeof annotate>[1];
-interface Placed { note: Note; range: Range; ambiguous: boolean; matches: number }
+// paint: the pieces to highlight when they aren't the whole range (several diff lines skip the
+// line numbers between them).
+interface Placed { note: Note; range: Range; ambiguous: boolean; matches: number; paint?: Range[] }
 interface TermHit { term: Term; range: Range }
 interface Mark { p: Placed; proxy: HTMLDivElement; ann: RoughAnnotation | null; type: string; last: string }
 
@@ -95,11 +97,18 @@ function potatoIcon(): SVGSVGElement {
 // A note's range: its diff line (narrowed to the quote, if it has one), or its quote in the page text.
 function place(note: Note, idx: ReturnType<typeof buildIndex>): Omit<Placed, 'note'> | null {
   if (!note.anchor) return note.quote === undefined ? null : anchor(idx, { ...note, quote: note.quote });
-  const line = diffLine(note.anchor.file, note.anchor.line, note.anchor.side);
-  if (!line) return null;
-  if (note.quote !== undefined) return anchor(buildIndex(line), { ...note, quote: note.quote });
-  const range = textRange(line);
-  return range ? { range, ambiguous: false, matches: 1 } : null;
+  const { file, line, endLine, side } = note.anchor;
+  if (note.quote !== undefined) {
+    const el = diffLine(file, line, side);
+    return el ? anchor(buildIndex(el), { ...note, quote: note.quote }) : null;
+  }
+  const paint = diffLines(file, line, endLine ?? line, side).map(textRange).filter((r): r is Range => r !== null);
+  const first = paint[0], last = paint.at(-1);
+  if (!first || !last) return null;
+  const range = document.createRange();
+  range.setStart(first.startContainer, first.startOffset);
+  range.setEnd(last.endContainer, last.endOffset);
+  return { range, ambiguous: false, matches: 1, paint: paint.length > 1 ? paint : undefined };
 }
 
 const label = (n: Note) => (n.kind === 'step' ? `Step ${n.step}` : kindOf(n).label);
@@ -441,7 +450,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     for (const k of [...KIND_NAMES, 'term', 'active']) CSS.highlights.delete(`at-${k}`);
     if (hidden() || !data) return;
     for (const k of KIND_NAMES) {
-      const hl = new Highlight(...placed.filter(p => p.note.kind === k).map(p => p.range));
+      const hl = new Highlight(...placed.filter(p => p.note.kind === k).flatMap(p => p.paint ?? [p.range]));
       hl.priority = 2;
       CSS.highlights.set(`at-${k}`, hl);
     }
@@ -701,7 +710,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   const arrived = () => {
     if (!unplaced.length) return false;
     const text = norm(scopeRoot().textContent ?? '');
-    return unplaced.some(n => (n.anchor ? diffLine(n.anchor.file, n.anchor.line, n.anchor.side) !== null : text.includes(norm(n.quote))));
+    return unplaced.some(n => (n.anchor ? diffLines(n.anchor.file, n.anchor.line, n.anchor.endLine ?? n.anchor.line, n.anchor.side).length > 0 : text.includes(norm(n.quote))));
   };
   let moTimer = 0;
   const mo = new MutationObserver(() => {

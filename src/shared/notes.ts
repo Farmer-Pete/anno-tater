@@ -16,6 +16,7 @@ interface DiffLine {
   file: string;
   line: number;
   side?: 'LEFT' | 'RIGHT'; // LEFT: the old file, for removed lines; RIGHT (the default): the new file
+  endLine?: number; // through this line, on the same side
 }
 
 export interface Note {
@@ -23,6 +24,7 @@ export interface Note {
   kind: Kind;
   quote?: string; // with neither quote nor anchor: a note about the whole page, listed at the top of the panel
   anchor?: DiffLine; // with a quote too, the quote is looked for on that line only
+  endQuote?: string; // the note runs from the quote through the first endQuote after it
   prefix?: string;
   suffix?: string;
   title?: string;
@@ -91,9 +93,12 @@ function checkNote(n: unknown, at: string, problems: Problems): void {
     const a = n.anchor;
     if (!isObj(a) || !str(a.file) || !a.file || !Number.isInteger(a.line) || (a.line as number) < 1 || (a.side !== undefined && a.side !== 'LEFT' && a.side !== 'RIGHT')) {
       problems.push(`${at}.anchor needs file, a line number, and optionally side ("LEFT" or "RIGHT")`);
+    } else if (a.endLine !== undefined && (!Number.isInteger(a.endLine) || (a.endLine as number) < (a.line as number) || n.quote !== undefined)) {
+      problems.push(`${at}.anchor.endLine must be a line number from line on, on a note without a quote`);
     }
   }
   for (const k of ['prefix', 'suffix', 'title', 'body'] as const) if (!optStr(n[k])) problems.push(`${at}.${k} must be a string`);
+  if (n.endQuote !== undefined && (!str(n.endQuote) || !n.endQuote.trim() || n.quote === undefined)) problems.push(`${at}.endQuote must be non-empty text, after a quote`);
   if (n.kind === 'step' && typeof n.step !== 'number') problems.push(`${at}.step must be a number for a step`);
   if (n.posted !== undefined && !(str(n.posted) && originPattern(n.posted))) problems.push(`${at}.posted must be the http(s) address of the posted comment`);
   if (n.decorate !== undefined && !DECORATIONS.includes(n.decorate as Decoration)) problems.push(`${at}.decorate must be one of ${DECORATIONS.join(', ')}`);
@@ -147,7 +152,11 @@ export function parseNotes(json: string): NotesFile {
 }
 
 // Where a note sits, in words: its quote, or its diff line.
-export const whereText = (n: Note) => n.quote ?? (n.anchor ? `${n.anchor.file}:${n.anchor.line}${n.anchor.side === 'LEFT' ? ' (old)' : ''}` : '');
+export const whereText = (n: Note) => {
+  const a = n.anchor;
+  const lines = a ? `${a.file}:${a.line}${a.endLine && a.endLine !== a.line ? `-${a.endLine}` : ''}${a.side === 'LEFT' ? ' (old)' : ''}` : '';
+  return n.quote !== undefined ? `${n.quote}${n.endQuote ? ` … ${n.endQuote}` : ''}` : lines;
+};
 // A note with neither a quote nor a diff line is about the whole page.
 export const isPageNote = (n: Note) => n.quote === undefined && n.anchor === undefined;
 
@@ -179,7 +188,7 @@ export function originPattern(url: string): string | null {
 // A short fingerprint of everything anchoring depends on, so a placement report can be matched to
 // the notes it was made from. FNV-1a, as hex.
 export function anchorsKey(notes: Pick<NotesFile, 'scope' | 'notes'>): string {
-  const text = JSON.stringify([notes.scope, notes.notes.map(n => [n.id, n.quote, n.prefix, n.suffix, n.anchor])]);
+  const text = JSON.stringify([notes.scope, notes.notes.map(n => [n.id, n.quote, n.endQuote, n.prefix, n.suffix, n.anchor])]);
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
   return h.toString(16).padStart(8, '0');

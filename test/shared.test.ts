@@ -109,15 +109,24 @@ test('a link can point at a note on another page', () => {
     ['links[0] must join a note id to a note id, or to { url, note } on another page']);
 });
 
-// A pull request page with one note on the given diff-line anchor.
-const onLine = (anchor: unknown) => ({ url: 'https://github.com/o/r/pull/1/changes', notes: [{ id: 'n1', kind: 'issue', anchor }] });
+// A pull request page with one note, made of these fields.
+const withNote = (fields: object) => ({ url: 'https://github.com/o/r/pull/1/changes', notes: [{ id: 'n1', kind: 'issue', ...fields }] });
 
 test('a diff-line anchor names a file, a line, and optionally a side', () => {
-  assert.deepEqual(validate(onLine({ file: 'src/app.py', line: 552, side: 'LEFT' })), []);
+  assert.deepEqual(validate(withNote({ anchor: { file: 'src/app.py', line: 552, side: 'LEFT' } })), []);
   for (const bad of [{ file: 'a', line: 0 }, { file: '', line: 3 }, { file: 'a', line: 3, side: 'right' }, 'a:3']) {
-    assert.deepEqual(validate(onLine(bad)), ['notes[0].anchor needs file, a line number, and optionally side ("LEFT" or "RIGHT")']);
+    assert.deepEqual(validate(withNote({ anchor: bad })), ['notes[0].anchor needs file, a line number, and optionally side ("LEFT" or "RIGHT")']);
   }
   const note = { id: 'n', kind: 'info' as const, anchor: { file: 'a.py', line: 7, side: 'LEFT' as const } };
   assert.equal(whereText(note), 'a.py:7 (old)');
   assert.equal(isPageNote(note), false);
+});
+
+test('a range runs from a quote to an endQuote, or from a diff line to an endLine', () => {
+  assert.deepEqual(validate(withNote({ quote: 'def resolve(tag, items):', endQuote: 'return matches' })), []);
+  assert.deepEqual(validate(withNote({ anchor: { file: 'a.py', line: 548, endLine: 565 } })), []);
+  assert.deepEqual(validate(withNote({ endQuote: 'x' })), ['notes[0].endQuote must be non-empty text, after a quote']);
+  assert.deepEqual(validate(withNote({ anchor: { file: 'a.py', line: 9, endLine: 8 } })),
+    ['notes[0].anchor.endLine must be a line number from line on, on a note without a quote']);
+  assert.equal(whereText({ id: 'n', kind: 'info', anchor: { file: 'a.py', line: 548, endLine: 565 } }), 'a.py:548-565');
 });
