@@ -1,11 +1,11 @@
-// The data folder that the CLI and the helper share. Everything is keyed by page: one notes
-// file, one state file, and one inbox per page URL, whatever the browser.
+// The data folder that the CLI and the helper share. Everything is keyed by page: one folder per
+// page URL, whatever the browser.
 //
-//   pages/<page>.json     the page's notes (written by the agent through tater)
-//   state/<page>.json     ticked steps and read replies, shared by every browser
-//   inbox/<page>.jsonl    the person's messages from the page, one JSON object per line
-//   delivered.jsonl       ids of messages an agent has picked up (drives "Claude has it"), one
-//                         per line. Append-only, so several writers can't overwrite each other.
+//   data/<page>/page.json     the page's notes (written by the agent through tater)
+//   data/<page>/state.json    ticked steps and read replies, shared by every browser
+//   data/<page>/inbox.jsonl   the person's messages from the page, one JSON object per line
+//   delivered.jsonl           ids of messages an agent has picked up (drives "Claude has it"), one
+//                             per line. Append-only, so several writers can't overwrite each other.
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -15,16 +15,19 @@ import type { PageState } from '../shared/protocol.ts';
 
 export const dataDir = () =>
   process.env.ANNO_TATER_HOME ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'anno-tater');
-const pagesDir = () => join(dataDir(), 'pages');
-export const inboxDir = () => join(dataDir(), 'inbox');
+export const pagesDir = () => join(dataDir(), 'data');
 const deliveredFile = () => join(dataDir(), 'delivered.jsonl');
 
 // A readable, collision-free file name for a page key.
 const fileName = (page: string) =>
   `${page.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'x'}-${createHash('sha256').update(page).digest('hex').slice(0, 8)}`;
-const notesFile = (page: string) => join(pagesDir(), `${fileName(page)}.json`);
-const stateFile = (page: string) => join(dataDir(), 'state', `${fileName(page)}.json`);
-const inboxFile = (page: string) => join(inboxDir(), `${fileName(page)}.jsonl`);
+export const pageDir = (page: string) => join(pagesDir(), fileName(page));
+const notesFile = (page: string) => join(pageDir(page), 'page.json');
+const stateFile = (page: string) => join(pageDir(page), 'state.json');
+const inboxFile = (page: string) => join(pageDir(page), 'inbox.jsonl');
+// Every page folder's copy of one file, where it exists.
+const each = (name: string) =>
+  existsSync(pagesDir()) ? readdirSync(pagesDir()).map(d => join(pagesDir(), d, name)).filter(f => existsSync(f)) : [];
 
 // Writes via a temporary file and a rename, so a reader never sees half a file.
 function writeAtomic(path: string, text: string): void {
@@ -43,14 +46,12 @@ export function savePage(notes: NotesFile): string {
 
 // Every valid notes file. Invalid ones are reported through onBad and skipped.
 export function loadPages(onBad: (file: string, problem: string) => void = () => {}): NotesFile[] {
-  if (!existsSync(pagesDir())) return [];
   const out: NotesFile[] = [];
-  for (const name of readdirSync(pagesDir())) {
-    if (!name.endsWith('.json')) continue;
+  for (const file of each('page.json')) {
     try {
-      out.push(parseNotes(readFileSync(join(pagesDir(), name), 'utf8')));
+      out.push(parseNotes(readFileSync(file, 'utf8')));
     } catch (e) {
-      onBad(name, (e as Error).message);
+      onBad(file, (e as Error).message);
     }
   }
   return out;
@@ -90,7 +91,7 @@ export function saveState(page: string, patch: Partial<PageState>): void {
 
 // ---------- messages ----------
 export function appendInbox(message: Outgoing): void {
-  mkdirSync(inboxDir(), { recursive: true });
+  mkdirSync(pageDir(message.page), { recursive: true });
   appendFileSync(inboxFile(message.page), `${JSON.stringify(message)}\n`);
 }
 
@@ -102,8 +103,7 @@ function readInbox(page: string): Outgoing[] {
 }
 
 export function readAllInboxes(): Outgoing[] {
-  if (!existsSync(inboxDir())) return [];
-  return readdirSync(inboxDir()).filter(f => f.endsWith('.jsonl')).flatMap(f => parseLines(join(inboxDir(), f)));
+  return each('inbox.jsonl').flatMap(parseLines);
 }
 
 // The page's messages the agent hasn't answered or acked yet.
