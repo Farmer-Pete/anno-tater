@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { anchorsKey, decodeFragment, encodeFragment, findQuote, norm, originPattern, pageKey, parseNotes, validate, type NotesFile } from '../src/shared/notes.ts';
+import { anchorsKey, decodeFragment, encodeFragment, findQuote, isPageNote, norm, originPattern, pageKey, parseNotes, validate, whereText, type NotesFile } from '../src/shared/notes.ts';
 
 const sample: NotesFile = {
   url: 'https://example.com/docs/page',
@@ -107,4 +107,17 @@ test('a link can point at a note on another page', () => {
   assert.deepEqual(validate({ ...page, links: [{ from: 't6', to: { url: 'https://github.com/o/r/pull/1/changes', note: 'f-type' } }] }), []);
   assert.deepEqual(validate({ ...page, links: [{ from: 't6', to: { url: 'ftp://x', note: 'f' } }] }),
     ['links[0] must join a note id to a note id, or to { url, note } on another page']);
+});
+
+// A pull request page with one note on the given diff-line anchor.
+const onLine = (anchor: unknown) => ({ url: 'https://github.com/o/r/pull/1/changes', notes: [{ id: 'n1', kind: 'issue', anchor }] });
+
+test('a diff-line anchor names a file, a line, and optionally a side', () => {
+  assert.deepEqual(validate(onLine({ file: 'src/app.py', line: 552, side: 'LEFT' })), []);
+  for (const bad of [{ file: 'a', line: 0 }, { file: '', line: 3 }, { file: 'a', line: 3, side: 'right' }, 'a:3']) {
+    assert.deepEqual(validate(onLine(bad)), ['notes[0].anchor needs file, a line number, and optionally side ("LEFT" or "RIGHT")']);
+  }
+  const note = { id: 'n', kind: 'info' as const, anchor: { file: 'a.py', line: 7, side: 'LEFT' as const } };
+  assert.equal(whereText(note), 'a.py:7 (old)');
+  assert.equal(isPageNote(note), false);
 });

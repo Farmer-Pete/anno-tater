@@ -7,11 +7,11 @@
 import { autoUpdate, computePosition, flip, offset, shift, type VirtualElement } from '@floating-ui/dom';
 import { getBoxToBoxArrow } from 'perfect-arrows';
 import { annotate } from 'rough-notation';
-import { anchorsKey, norm, pageKey as keyOf, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { anchorsKey, isPageNote, norm, pageKey as keyOf, whereText, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import type { PageState, Placement } from '../shared/protocol.ts';
-import { anchor, buildIndex, context, findTerms } from './anchor.ts';
+import { anchor, buildIndex, context, findTerms, textRange } from './anchor.ts';
 import { h, inline, md, svg } from './dom.ts';
-import { headCommit } from './github.ts';
+import { diffLine, headCommit } from './github.ts';
 import { POTATO } from './potato.ts';
 import { ACCENT, KINDS, PAGE_CSS, UI_CSS } from './styles.ts';
 
@@ -90,6 +90,16 @@ function potatoIcon(): SVGSVGElement {
   icon.append(svg('path', { d: POTATO.body, fill: POTATO.fill, stroke: POTATO.stroke, 'stroke-width': 3 }));
   for (const [x, y, r] of POTATO.eyes) icon.append(svg('circle', { cx: x, cy: y, r, fill: POTATO.stroke }));
   return icon;
+}
+
+// A note's range: its diff line (narrowed to the quote, if it has one), or its quote in the page text.
+function place(note: Note, idx: ReturnType<typeof buildIndex>): Omit<Placed, 'note'> | null {
+  if (!note.anchor) return note.quote === undefined ? null : anchor(idx, { ...note, quote: note.quote });
+  const line = diffLine(note.anchor.file, note.anchor.line, note.anchor.side);
+  if (!line) return null;
+  if (note.quote !== undefined) return anchor(buildIndex(line), { ...note, quote: note.quote });
+  const range = textRange(line);
+  return range ? { range, ambiguous: false, matches: 1 } : null;
 }
 
 const label = (n: Note) => (n.kind === 'step' ? `Step ${n.step}` : kindOf(n).label);
@@ -556,7 +566,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     const onPage = pageNotes.includes(first);
     toast = h('div', { class: 'toast' },
       h('div', { class: 'k', style: `color:${ACCENT}` }, unread.length > 1 ? `Claude replied on ${unread.length} notes` : 'Claude replied'),
-      h('div', { style: 'margin:2px 0 8px' }, inline(first.title ?? first.quote ?? '')),
+      h('div', { style: 'margin:2px 0 8px' }, inline(first.title ?? whereText(first))),
       h('div', { class: 'row' },
         h('button', { class: 'b', onclick: () => { toast?.remove(); toast = null; } }, 'Later'),
         (p || onPage) && h('button', { class: 'b primary', onclick: () => {
@@ -606,7 +616,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
         note.kind === 'step'
           ? h('input', { type: 'checkbox', checked: done, onclick: (e: Event) => { e.stopPropagation(); toggleDone(note); } })
           : h('span', { class: 'dot', style: `background:${kindOf(note).color}` }),
-        h('span', { class: 'label', style: done ? 'text-decoration:line-through;color:#656d76' : '' }, inline(note.title ?? note.quote ?? '')),
+        h('span', { class: 'label', style: done ? 'text-decoration:line-through;color:#656d76' : '' }, inline(note.title ?? whereText(note))),
         unread.has(note.id) && h('span', { class: 'badge' }, 'new'),
         note.posted && h('a', { class: 'badge posted', href: note.posted, target: '_blank', rel: 'noopener', title: 'Open the posted comment',
           onclick: (e: Event) => e.stopPropagation() }, 'posted'));
@@ -624,7 +634,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       h('div', { class: 'item miss', title: m.quote ?? '' }, h('span', { class: 'dot', style: `background:${ACCENT}` }),
         h('span', null, m.text ?? '', h('br'), h('span', { class: 'status', style: 'font-size:11px' }, pendingLabel(m.id)))))));
     if (unplaced.length) panel.append(h('div', { class: 'sec' }, h('h4', null, `Couldn't place (${unplaced.length})`),
-      unplaced.map(n => h('div', { class: 'item miss', title: n.quote }, h('span', { class: 'dot', style: 'background:#8c959f' }), inline(n.title ?? n.quote ?? '')))));
+      unplaced.map(n => h('div', { class: 'item miss', title: whereText(n) }, h('span', { class: 'dot', style: 'background:#8c959f' }), inline(n.title ?? whereText(n))))));
     panel.append(h('label', { class: 'opt' },
       h('input', { type: 'checkbox', checked: blockKeys(), onchange: (e: Event) => store.set('block-keys', (e.target as HTMLInputElement).checked) }),
       'Block site shortcuts'));
@@ -646,12 +656,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
 
   function render(): void {
     placed = []; unplaced = []; terms = [];
-    pageNotes = (data?.notes ?? []).filter(n => n.quote === undefined);
+    pageNotes = (data?.notes ?? []).filter(isPageNote);
     if (data && document.body) {
       const idx = buildIndex(scopeRoot());
       for (const note of data.notes) {
-        if (note.quote === undefined) continue;
-        const a = anchor(idx, { ...note, quote: note.quote });
+        if (isPageNote(note)) continue;
+        const a = place(note, idx);
         if (a) placed.push({ note, ...a }); else unplaced.push(note);
       }
       terms = findTerms(idx, data.glossary);
@@ -674,8 +684,8 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       notes: anchorsKey(data),
       placed: placed.length,
       onPage: pageNotes.length,
-      unplaced: unplaced.map(n => ({ id: n.id, quote: n.quote ?? '' })),
-      ambiguous: placed.filter(p => p.ambiguous).map(p => ({ id: p.note.id, quote: p.note.quote ?? '', matches: p.matches })),
+      unplaced: unplaced.map(n => ({ id: n.id, quote: whereText(n) })),
+      ambiguous: placed.filter(p => p.ambiguous).map(p => ({ id: p.note.id, quote: whereText(p.note), matches: p.matches })),
       commit: headCommit() ?? undefined,
     };
     const key = JSON.stringify(report);
@@ -691,7 +701,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   const arrived = () => {
     if (!unplaced.length) return false;
     const text = norm(scopeRoot().textContent ?? '');
-    return unplaced.some(n => text.includes(norm(n.quote)));
+    return unplaced.some(n => (n.anchor ? diffLine(n.anchor.file, n.anchor.line, n.anchor.side) !== null : text.includes(norm(n.quote))));
   };
   let moTimer = 0;
   const mo = new MutationObserver(() => {
