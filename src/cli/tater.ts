@@ -1,7 +1,8 @@
 // tater: the agent's side of Anno Tater.
 import { mkdirSync, readFileSync, watch } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { encodeFragment, pageKey, parseNotes, type Note, type NotesFile, type Outgoing } from '../shared/notes.ts';
+import { dirname, resolve } from 'node:path';
+import { encodeFragment, glossaryProblems, pageKey, parseNotes, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
@@ -28,8 +29,25 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
 const fail = (message: string): never => { console.error(message); process.exit(1); };
 const readNotes = (file: string) => {
-  try { return parseNotes(readFileSync(file, 'utf8')); } catch (e) { return fail(`${file}: ${(e as Error).message}`); }
+  try { return withSharedGlossary(parseNotes(readFileSync(file, 'utf8')), file); } catch (e) { return fail(`${file}: ${(e as Error).message}`); }
 };
+
+// Merges the terms from glossaryFiles (each a list of terms, or an object with a glossary list,
+// such as another notes file) into the page's glossary. A page's own term wins over a shared one.
+function withSharedGlossary(notes: NotesFile, file: string): NotesFile {
+  const shared = new Map<string, Term>();
+  for (const g of notes.glossaryFiles ?? []) {
+    let v: unknown;
+    try { v = JSON.parse(readFileSync(resolve(dirname(file), g), 'utf8')); } catch (e) { throw new Error(`glossary file ${g}: ${(e as Error).message}`, { cause: e }); }
+    const list: unknown = Array.isArray(v) ? v : (v as { glossary?: unknown } | null)?.glossary;
+    const problems = glossaryProblems(list, g);
+    if (problems.length) throw new Error(problems.join('\n'));
+    for (const t of list as Term[]) shared.set(t.term, t);
+  }
+  if (!shared.size) return notes;
+  for (const t of notes.glossary ?? []) shared.delete(t.term);
+  return { ...notes, glossary: [...shared.values(), ...(notes.glossary ?? [])] };
+}
 const browsers = (b: string | undefined, all: Browser[]): Browser[] =>
   b === undefined ? all : isBrowser(b) ? [b] : fail(`unknown browser: ${b} (use ${BROWSERS.join(', ')})`);
 const targetBrowser = (b: string | undefined): Browser =>
@@ -174,7 +192,7 @@ switch (values.help ? 'help' : command) {
     break;
   case 'check': {
     const notes = readNotes(args[0] ?? fail('check needs a notes file'));
-    console.log(`ok: ${notes.notes.length} notes for ${notes.url}`);
+    console.log(`ok: ${notes.notes.length} notes${notes.glossary?.length ? ` and ${notes.glossary.length} terms` : ''} for ${notes.url}`);
     break;
   }
   case 'watch':

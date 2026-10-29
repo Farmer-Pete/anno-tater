@@ -213,6 +213,24 @@ test('a push over notes another session wrote needs --force', () => {
   tater(dir, 'push', file); // without a session id, nothing to compare
 });
 
+test('shared glossary files merge into the page glossary, and a term the page defines wins', () => {
+  const dir = home();
+  writeFileSync(join(dir, 'shared.json'), JSON.stringify([{ term: 'NCA', def: 'shared NCA' }, { term: 'PLC', def: 'shared PLC' }]));
+  writeFileSync(join(dir, 'other-notes.json'), JSON.stringify({ url: 'https://example.com/b', notes: [], glossary: [{ term: 'HMI', def: 'from a notes file' }] }));
+  const file = join(dir, 'notes.json');
+  writeFileSync(file, JSON.stringify({ ...notes, glossaryFiles: ['shared.json', './other-notes.json'], glossary: [{ term: 'PLC', def: 'this page' }] }));
+  assert.match(tater(dir, 'check', file), /ok: 1 notes and 3 terms/);
+  tater(dir, 'push', file);
+  const [folder] = readdirSync(join(dir, 'data'));
+  const saved = JSON.parse(readFileSync(join(dir, 'data', folder ?? '', 'page.json'), 'utf8')) as NotesFile;
+  assert.deepEqual(saved.glossary, [{ term: 'NCA', def: 'shared NCA' }, { term: 'HMI', def: 'from a notes file' }, { term: 'PLC', def: 'this page' }]);
+  writeFileSync(file, JSON.stringify({ ...notes, glossaryFiles: ['missing.json'] }));
+  assert.throws(() => tater(dir, 'check', file), /glossary file missing\.json: ENOENT/);
+  writeFileSync(join(dir, 'bad.json'), JSON.stringify([{ term: 'X' }]));
+  writeFileSync(file, JSON.stringify({ ...notes, glossaryFiles: ['bad.json'] }));
+  assert.throws(() => tater(dir, 'check', file), /bad\.json\[0\] needs term and def/);
+});
+
 // Retries until read() returns want, for changes that arrive through file watching.
 async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
   for (let i = 0; i < 50; i++) {

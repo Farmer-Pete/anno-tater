@@ -26,6 +26,7 @@
 | `notes` | yes | The notes, below. |
 | `links` | no | Arrows between two notes, drawn down the left margin: `from`, `to` (note ids), optional `label`. |
 | `glossary` | no | `term` and `def`. Every whole-word use of `term` (case-sensitive) gets a dotted underline and a hover definition. |
+| `glossaryFiles` | no | Shared glossaries for a review that spans several pages, as paths relative to this notes file. Each file is a list of terms, or any object with a `glossary` list, such as another notes file. `tater push` and `tater open` merge them in; a term in this file's own `glossary` wins. Push each page again after editing a shared file. |
 | `acked` | managed | Message ids already handled. `tater reply` and `tater ack` maintain it; keep it when you edit the file. |
 | `session` | managed | The agent session that wrote the notes. `tater push` sets it and refuses to replace another session's notes without `--force`. |
 

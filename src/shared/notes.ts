@@ -44,6 +44,7 @@ export interface NotesFile {
   notes: Note[];
   links?: Link[];
   glossary?: Term[];
+  glossaryFiles?: string[]; // shared glossaries, relative to the notes file; tater merges them into glossary
   acked?: string[];
   session?: string; // the agent session that last pushed these notes (managed by tater)
 }
@@ -85,6 +86,12 @@ function checkNote(n: unknown, at: string, problems: Problems): void {
   }
 }
 
+// Problems with a list of glossary terms.
+export function glossaryProblems(v: unknown, at: string): Problems {
+  if (!Array.isArray(v)) return [`${at} must be a list`];
+  return v.flatMap((g, i) => (!isObj(g) || !str(g.term) || !g.term || !str(g.def) ? [`${at}[${i}] needs term and def`] : []));
+}
+
 // Returns the problems found. An empty list means the value is a valid NotesFile.
 export function validate(v: unknown): Problems {
   const problems: Problems = [];
@@ -104,10 +111,8 @@ export function validate(v: unknown): Problems {
       });
     } else if (v.links !== undefined) problems.push('links must be a list');
   }
-  if (v.glossary !== undefined) {
-    if (!Array.isArray(v.glossary)) problems.push('glossary must be a list');
-    else v.glossary.forEach((g, i) => { if (!isObj(g) || !str(g.term) || !g.term || !str(g.def)) problems.push(`glossary[${i}] needs term and def`); });
-  }
+  if (v.glossary !== undefined) problems.push(...glossaryProblems(v.glossary, 'glossary'));
+  if (v.glossaryFiles !== undefined && !(Array.isArray(v.glossaryFiles) && v.glossaryFiles.every(str))) problems.push('glossaryFiles must be a list of file paths');
   if (v.acked !== undefined && !(Array.isArray(v.acked) && v.acked.every(str))) problems.push('acked must be a list of message ids');
   return problems;
 }
