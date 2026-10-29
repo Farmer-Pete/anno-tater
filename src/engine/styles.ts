@@ -23,6 +23,9 @@ export const UI_CSS = `
   .marks { position: absolute; top: 0; left: 0; pointer-events: none; }
   .marks.off { display: none; }
   .proxy { position: absolute; pointer-events: none; }
+  /* rough-notation draws by animating its strokes with these keyframes. It defines them in the
+     page's head, which a shadow root can't see, so without this copy every decoration stays invisible. */
+  @keyframes rough-notation-dash { to { stroke-dashoffset: 0; } }
   svg.arrows { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
   .ui, .ui * { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: #1f2328; }
   .pin { position: absolute; width: 24px; height: 24px; border-radius: 50%; color: #fff !important; font-weight: 700 !important;
