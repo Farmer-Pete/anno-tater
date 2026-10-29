@@ -5,7 +5,7 @@ import { encodeFragment, pageKey, parseNotes, type Note, type NotesFile, type Ou
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
-import { dataDir, findPage, inboxDir, loadPages, markDelivered, pending, readAllInboxes, readDelivered, savePage } from '../host/store.ts';
+import { dataDir, findPage, loadPages, markDelivered, pageDir, pagesDir, pending, readAllInboxes, readDelivered, savePage } from '../host/store.ts';
 
 const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
@@ -84,9 +84,14 @@ function watchInbox(page: string | null, once: boolean): void {
   };
   flush();
   if (once) return;
-  mkdirSync(inboxDir(), { recursive: true });
+  // One page: its own folder. Every page: the whole tree, which also sees notes and state writes,
+  // so only inbox changes count.
+  const dir = page ? pageDir(page) : pagesDir();
+  mkdirSync(dir, { recursive: true });
   let timer: NodeJS.Timeout | undefined;
-  watch(inboxDir(), () => { clearTimeout(timer); timer = setTimeout(flush, 100); });
+  watch(dir, { recursive: !page }, (_event, file) => {
+    if (String(file).endsWith('inbox.jsonl')) { clearTimeout(timer); timer = setTimeout(flush, 100); }
+  });
   setInterval(flush, 5000); // a safety net in case a file event is missed
 }
 

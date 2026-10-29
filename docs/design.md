@@ -14,7 +14,7 @@ Anno Tater lets a coding agent such as Claude Code mark up any web page for a pe
 
 ```mermaid
 flowchart TB
-  A["Agent"] -->|"tater push / tater open"| F[("Data folder<br/>pages/*.json, inbox/*.jsonl")]
+  A["Agent"] -->|"tater push / tater open"| F[("Data folder<br/>data/&lt;page&gt;/page.json, inbox.jsonl")]
   A -->|"tater open, no helper"| O["Extension intake page<br/>(notes in the URL fragment)"]
   F <-->|"files"| H["Helper<br/>(native messaging host)"]
   H <-->|"stdio, started by the browser"| B["Extension background"]
@@ -77,9 +77,9 @@ A page's address, without the scheme or the `#fragment`, keys everything:
 
 | File | What | Shared by |
 | --- | --- | --- |
-| `pages/<page>.json` | The notes | every browser |
-| `state/<page>.json` | Ticked steps and read replies | every browser (two-way mode) |
-| `inbox/<page>.jsonl` | The person's messages | every browser |
+| `data/<page>/page.json` | The notes | every browser |
+| `data/<page>/state.json` | Ticked steps and read replies | every browser (two-way mode) |
+| `data/<page>/inbox.jsonl` | The person's messages | every browser |
 
 A fragment route (`#/settings`, `#!/settings`) stays in the key, since single-page apps route with it; a bare `#/` is the root. A single-page app also changes its address without a reload, so the content script checks the address on `hashchange`, on `popstate`, and twice a second, and asks for the new page's notes when the key changes.
 

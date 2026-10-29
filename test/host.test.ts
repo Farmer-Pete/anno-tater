@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -96,6 +96,44 @@ test('helper, CLI and inbox work end to end', async () => {
     assert.equal(tater(dir, 'watch', '--page', notes.url, '--once').trim(), '');
   } finally {
     h.child.kill();
+  }
+});
+
+test('each page keeps its notes, state, and inbox in one folder', async () => {
+  const { dir } = pushed();
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    h.send({ type: 'state', page, state: { done: { n1: true } } });
+    h.send({ type: 'send', message: { id: 'm1', at: '', page, url: notes.url, kind: 'reply', noteId: 'n1', text: 'hi' } satisfies Outgoing });
+    await h.waitFor('sent');
+  } finally {
+    h.child.kill();
+  }
+  const [folder, ...more] = readdirSync(join(dir, 'data'));
+  assert.deepEqual(more, []);
+  assert.deepEqual(readdirSync(join(dir, 'data', folder ?? '')).toSorted(), ['inbox.jsonl', 'page.json', 'state.json']);
+  assert.equal(existsSync(join(dir, 'pages')), false);
+});
+
+// Starts tater watch and resolves with its first line of output.
+function firstLine(dir: string, ...args: string[]): { line: Promise<string>; stop: () => void } {
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/cli/tater.ts', 'watch', ...args], { env: { ...process.env, ANNO_TATER_HOME: dir } });
+  const line = new Promise<string>(resolve => { child.stdout.on('data', (b: Buffer) => resolve(b.toString().trim())); });
+  return { line, stop: () => child.kill() };
+}
+
+test('a running watch prints a message as it arrives, for one page or every page', async () => {
+  const { dir } = pushed();
+  const one = firstLine(dir, '--page', notes.url), all = firstLine(dir, '--all');
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    await new Promise(r => setTimeout(r, 300)); // let both watchers start
+    h.send({ type: 'send', message: { id: 'm9', at: '', page, url: notes.url, kind: 'reply', noteId: 'n1', text: 'live' } satisfies Outgoing });
+    for (const w of [one, all]) assert.equal((JSON.parse(await w.line) as Outgoing).id, 'm9');
+  } finally {
+    h.child.kill(); one.stop(); all.stop();
   }
 });
 
