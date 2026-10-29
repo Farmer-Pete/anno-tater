@@ -48,8 +48,9 @@ export function inline(text: string): Child[] {
 
 type Align = 'left' | 'center' | 'right' | null;
 type Block =
-  | { kind: 'p'; text: string }
+  | { kind: 'p'; lines: string[] }
   | { kind: 'ul'; items: string[] }
+  | { kind: 'quote'; blocks: Block[] }
   | { kind: 'table'; align: Align[]; head: string[]; rows: string[][] }
   | { kind: 'code'; lang: string; text: string };
 
@@ -61,8 +62,9 @@ const alignOf = (rule: string): Align =>
   rule.startsWith(':') && rule.endsWith(':') ? 'center' : rule.endsWith(':') ? 'right' : rule.startsWith(':') ? 'left' : null;
 
 // Blocks: fenced code (``` with an optional language, up to the closing ``` or the end), then
-// paragraphs separated by blank lines, lists of "- " lines, and tables (a header row, a "| --- |"
-// rule with the same number of cells, then rows).
+// paragraphs separated by blank lines, lists of "- " lines, "> " quotes, and tables (a header row,
+// a "| --- |" rule with the same number of cells, then rows). A line break inside a paragraph
+// stays a line break, as in GitHub comments and in the reply box (Shift+Enter).
 export function blocks(src: string | undefined): Block[] {
   const out: Block[] = [];
   const lines = String(src ?? '').split('\n');
@@ -81,12 +83,23 @@ export function blocks(src: string | undefined): Block[] {
   return out;
 }
 
+const lineKind = (l: string) => (/^\s*>/.test(l) ? 'quote' : /^\s*- /.test(l) ? 'ul' : 'p');
+
 function prose(src: string, out: Block[]): void {
+  // Runs of quoted lines, list lines, and other lines, in order. A quote's text is parsed again,
+  // so it can hold lists, code, or tables.
   const text = (all: string[]) => {
     const lines = all.filter(l => l.trim());
-    if (!lines.length) return;
-    if (lines.every(l => /^\s*- /.test(l))) out.push({ kind: 'ul', items: lines.map(l => l.replace(/^\s*- /, '')) });
-    else out.push({ kind: 'p', text: lines.join(' ') });
+    for (let i = 0; i < lines.length;) {
+      const kind = lineKind(lines[i] ?? '');
+      let j = i;
+      while (j < lines.length && lineKind(lines[j] ?? '') === kind) j++;
+      const run = lines.slice(i, j);
+      i = j;
+      if (kind === 'quote') out.push({ kind, blocks: blocks(run.map(l => l.replace(/^\s*> ?/, '')).join('\n')) });
+      else if (kind === 'ul') out.push({ kind, items: run.map(l => l.replace(/^\s*- /, '')) });
+      else out.push({ kind, lines: run });
+    }
   };
   for (let lines of src.split(/\n{2,}/).map(b => b.split('\n'))) {
     for (let at = tableAt(lines); at >= 0; at = tableAt(lines)) {
@@ -130,10 +143,13 @@ function tableAt(lines: string[]): number {
   return lines.findIndex((l, i) => l.includes('|') && isRule(lines[i + 1]) && cells(l).length === cells(lines[i + 1]).length);
 }
 
-export function md(src: string | undefined): DocumentFragment {
+export const md = (src: string | undefined): DocumentFragment => render(blocks(src));
+
+function render(bs: Block[]): DocumentFragment {
   const frag = document.createDocumentFragment();
-  for (const b of blocks(src)) {
-    if (b.kind === 'p') frag.append(h('p', null, inline(b.text)));
+  for (const b of bs) {
+    if (b.kind === 'p') frag.append(h('p', null, b.lines.map((l, i) => [i > 0 && h('br'), inline(l)])));
+    else if (b.kind === 'quote') frag.append(h('blockquote', null, render(b.blocks)));
     else if (b.kind === 'ul') frag.append(h('ul', null, b.items.map(i => h('li', null, inline(i)))));
     else if (b.kind === 'code') {
       // A diff gets one block per line (empty lines need a space to keep their height).

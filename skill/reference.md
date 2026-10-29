@@ -42,7 +42,7 @@
 | `endQuote` | With a `quote`, the note runs from the quote through the first `endQuote` after it, across paragraphs, list items, or table cells. |
 | `prefix`, `suffix` | Text just before or after the quote, to pick one of several matches. |
 | `title` | One line: the point of the note. Shown on hover and in the panel. |
-| `body` | Details, shown on click. Paragraphs split by a blank line, `- ` bullet lists, GitHub-style tables (header row, `---` rule row, body rows), fenced code blocks (```` ```python ````; `diff` colors `+` and `-` lines), `` `code` ``, `**bold**`, `[text](https://…)`. |
+| `body` | Details, shown on click. Paragraphs split by a blank line (a single line break stays a line break), `- ` bullet lists, `> ` quotes, GitHub-style tables (header row, `---` rule row, body rows), fenced code blocks (```` ```python ````; `diff` colors `+` and `-` lines), `` `code` ``, `**bold**`, `[text](https://…)`. |
 | `step` | The step number, for `kind: "step"`. |
 | `decorate` | Extra emphasis drawn around the text: `box`, `circle`, `underline`, `bracket`. Use sparingly. |
 | `thread` | The conversation: `{ "from": "you" \| "claude", "text": "…" }`. `tater reply` appends to it. |

@@ -13,14 +13,14 @@ test('a markdown table becomes a table block, with alignment and ragged rows eve
     'Done.',
   ].join('\n');
   assert.deepEqual(blocks(src), [
-    { kind: 'p', text: 'Ports seen:' },
+    { kind: 'p', lines: ['Ports seen:'] },
     {
       kind: 'table',
       align: ['left', 'center', 'right'],
       head: ['Port', 'Proto', 'Note'],
       rows: [['502', '`tcp`', 'Modbus'], ['20000', 'udp', ''], ['47808', 'udp', 'BACnet']],
     },
-    { kind: 'p', text: 'Done.' },
+    { kind: 'p', lines: ['Done.'] },
   ]);
 });
 
@@ -31,21 +31,21 @@ test('table cells keep escaped pipes, and outer pipes are optional', () => {
 });
 
 test('pipes without a matching rule row stay a paragraph', () => {
-  assert.deepEqual(blocks('a | b\n| --- |'), [{ kind: 'p', text: 'a | b | --- |' }]);
+  assert.deepEqual(blocks('a | b\n| --- |'), [{ kind: 'p', lines: ['a | b', '| --- |'] }]);
 });
 
-test('paragraphs and lists still split on blank lines', () => {
+test('paragraphs and lists split on blank lines, and a paragraph keeps its line breaks', () => {
   assert.deepEqual(blocks('One\ntwo\n\n- a\n- b'), [
-    { kind: 'p', text: 'One two' },
+    { kind: 'p', lines: ['One', 'two'] },
     { kind: 'ul', items: ['a', 'b'] },
   ]);
 });
 
 test('a fenced code block keeps its blank lines and language, between paragraphs', () => {
   assert.deepEqual(blocks('Before\n```Python\ndef f():\n\n    return 1\n```\nAfter'), [
-    { kind: 'p', text: 'Before' },
+    { kind: 'p', lines: ['Before'] },
     { kind: 'code', lang: 'python', text: 'def f():\n\n    return 1' },
-    { kind: 'p', text: 'After' },
+    { kind: 'p', lines: ['After'] },
   ]);
 });
 
@@ -65,4 +65,16 @@ test('the highlighter marks comments, strings, numbers, and keywords, and leaves
 
 test('a diff block marks added, removed, and hunk lines', () => {
   assert.deepEqual(tokens('diff', '@@ -1 +1 @@\n-old\n+new\n same'), [['hunk', '@@ -1 +1 @@'], ['del', '-old'], ['add', '+new'], [null, ' same']]);
+});
+
+test('a quote is its own block, parsed again inside, and runs of lines keep their kind', () => {
+  assert.deepEqual(blocks('> The real gap is data\nIs the data gap mentioned? And does it matter?'), [
+    { kind: 'quote', blocks: [{ kind: 'p', lines: ['The real gap is data'] }] },
+    { kind: 'p', lines: ['Is the data gap mentioned? And does it matter?'] },
+  ]);
+  assert.deepEqual(blocks('> - one\n>\n> two\nSteps:\n- a\n- b'), [
+    { kind: 'quote', blocks: [{ kind: 'ul', items: ['one'] }, { kind: 'p', lines: ['two'] }] },
+    { kind: 'p', lines: ['Steps:'] },
+    { kind: 'ul', items: ['a', 'b'] },
+  ]);
 });
