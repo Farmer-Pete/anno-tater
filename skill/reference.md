@@ -44,6 +44,7 @@
 | `step` | The step number, for `kind: "step"`. |
 | `decorate` | Extra emphasis drawn around the text: `box`, `circle`, `underline`, `bracket`. Use sparingly. |
 | `thread` | The conversation: `{ "from": "you" \| "claude", "text": "…" }`. `tater reply` appends to it. |
+| `posted` | The address of the published comment the note became. Set it with `tater mark <id> --posted <url>`; the panel shows a "posted" badge that opens it, and `tater push` keeps it when your copy lacks it. |
 
 ## Writing notes that help
 

@@ -81,6 +81,8 @@ export const UI_CSS = `
   .item.miss { color: #656d76 !important; cursor: default; }
   .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; }
   .badge { background: ${ACCENT}; color: #fff !important; border-radius: 10px; padding: 0 7px; font-size: 11px !important; font-weight: 700 !important; white-space: nowrap; }
+  .badge.posted { background: #1a7f37; text-decoration: none; }
+  .card .posted { color: #1a7f37 !important; font-weight: 600 !important; }
   .opt { display: flex; align-items: center; gap: 6px; padding: 6px 10px 0; border-top: 1px solid #d8dee4; cursor: pointer; }
   .meta { font-size: 11px !important; color: #656d76 !important; padding: 4px 10px 8px; }
 `;

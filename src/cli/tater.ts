@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, watch } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { dirname, resolve } from 'node:path';
-import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, validate, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
@@ -18,6 +18,7 @@ const USAGE = `tater: let an agent mark up web pages with Anno Tater
   tater reply <message-id> <text|->         Answer a message in its thread ("-" reads the text from stdin)
   tater reply --note ID <text|->            Answer every message waiting on a note (--page URL if the id repeats)
   tater ack <message-id>...                 Mark messages handled without answering
+  tater mark <note-id> --posted <url>       Record the published comment a note became (--page URL if the id repeats)
   tater check <notes.json>                  Validate a notes file
   tater status [--page URL...]              Pages, helper install state, and waiting messages
                                             (--page: also which notes placed, didn't, or matched more than once)
@@ -182,7 +183,11 @@ function store(file: string, force: boolean): NotesFile {
     fail(`another agent session (${short(before.session)}) wrote the notes for ${notes.url}; pass --force to replace them`);
   }
   const merged = { ...notes, session: session ?? before?.session, acked: [...new Set([...(before?.acked ?? []), ...(notes.acked ?? [])])] };
-  for (const note of merged.notes) note.thread ??= before?.notes.find(n => n.id === note.id)?.thread;
+  for (const note of merged.notes) {
+    const old = before?.notes.find(n => n.id === note.id);
+    note.thread ??= old?.thread;
+    note.posted ??= old?.posted;
+  }
   console.log(`saved ${savePage(merged)}`);
   console.log(`replies: tater watch --page ${notes.url}`);
   return merged;
@@ -191,7 +196,7 @@ function store(file: string, force: boolean): NotesFile {
 // ---------- main ----------
 const { values, positionals } = parseArgs({
   allowPositionals: true,
-  options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, force: { type: 'boolean' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+  options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, force: { type: 'boolean' }, posted: { type: 'string' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
 const pages = [...new Set((values.page ?? []).map(pageKey))];
@@ -229,6 +234,23 @@ switch (values.help ? 'help' : command) {
     if (!args.length) fail('ack needs message ids');
     for (const id of args) saveWithAck(pageFor(findMessage(id)), [id]);
     console.log(`acked ${args.length}`);
+    break;
+  }
+  case 'mark': {
+    const id = args[0] ?? fail('mark needs a note id');
+    const url = values.posted ?? fail('mark needs --posted <url of the comment>');
+    const found = loadPages().filter(p => (!pages.length || pages.includes(pageKey(p.url))) && p.notes.some(n => n.id === id));
+    const [page, ...more] = found;
+    if (!page) fail(`no note ${id}${pages.length ? ' on that page' : ''}`);
+    else if (more.length) fail(`note ${id} is on ${found.length} pages; add --page URL`);
+    else {
+      const note = page.notes.find(n => n.id === id);
+      if (note) note.posted = url;
+      const problems = validate(page);
+      if (problems.length) fail(problems.join('\n'));
+      savePage(page);
+      console.log(`marked ${id} posted on ${page.url}`);
+    }
     break;
   }
   case 'status': {
