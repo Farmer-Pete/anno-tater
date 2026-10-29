@@ -4,7 +4,7 @@
 //   DOM, so a page that re-renders its own nodes can't erase them.
 // - Everything else (cards, panel, pins, arrows) lives in one shadow root.
 // - Highlights have no DOM, so hover and click find the note under the pointer themselves.
-import { autoUpdate, computePosition, flip, offset, shift, type VirtualElement } from '@floating-ui/dom';
+import { autoUpdate, computePosition, flip, offset, shift, size, type VirtualElement } from '@floating-ui/dom';
 import { getBoxToBoxArrow } from 'perfect-arrows';
 import { annotate } from 'rough-notation';
 import { anchorsKey, isPageNote, norm, pageKey as keyOf, whereText, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
@@ -61,9 +61,12 @@ const rangeRef = (range: Range): VirtualElement => ({
   getClientRects: () => range.getClientRects(),
   contextElement: range.startContainer.parentElement ?? undefined,
 });
+// A floating piece goes on whichever side has more room, and a piece taller than that room (a long
+// card) shrinks to fit and scrolls, instead of running off the screen.
 function float(el: HTMLElement, ref: VirtualElement, placement: 'bottom-start' | 'top-start' | 'top' | 'left-start' = 'bottom-start'): () => void {
+  const fit = size({ padding: 8, apply: ({ availableHeight }) => { el.style.maxHeight = `${Math.max(120, Math.min(availableHeight, innerHeight * 0.65))}px`; } });
   return autoUpdate(ref, el, () => {
-    void computePosition(ref, el, { placement, strategy: 'fixed', middleware: [offset(8), flip(), shift({ padding: 8 })] })
+    void computePosition(ref, el, { placement, strategy: 'fixed', middleware: [offset(8), flip(), shift({ padding: 8 }), fit] })
       .then(({ x, y }) => { el.style.left = `${x}px`; el.style.top = `${y}px`; });
   });
 }
