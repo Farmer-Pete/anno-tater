@@ -44,6 +44,13 @@ function rangeAt(idx: TextIndex, start: number, len: number): Range | null {
 
 const visible = (r: Range) => r.getClientRects().length > 0;
 
+// An element's text as one range, without the white space around it; null when it has no text.
+export function textRange(el: Element): Range | null {
+  const idx = buildIndex(el);
+  const len = idx.text.trimEnd().length;
+  return len ? rangeAt(idx, 0, len) : null;
+}
+
 // The best visible match for a note's quote, or null when the quote isn't on the page. matches
 // counts every place the quote occurs.
 export function anchor(idx: TextIndex, note: { quote: string; prefix?: string; suffix?: string }): { range: Range; ambiguous: boolean; matches: number } | null {

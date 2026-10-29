@@ -10,3 +10,18 @@ export function headCommit(): string | null {
   }
   return null;
 }
+
+// The text of one line of a pull request's diff, by file, line number, and side, as GitHub's
+// changes view marks it: each file is a table labelled "Diff for: <path>", and each row's cells
+// carry data-diff-side and data-line-number. A context line's old (LEFT) number is only on its
+// line-number cell, so the row is found by any cell and the text cell taken from that row.
+export function diffLine(file: string, line: number, side: 'LEFT' | 'RIGHT' = 'RIGHT'): Element | null {
+  const table = [...document.querySelectorAll('table[aria-label^="Diff for: "]')].find(t => t.getAttribute('aria-label') === `Diff for: ${file}`);
+  const s = side.toLowerCase();
+  for (const cell of table?.querySelectorAll(`td[data-diff-side="${s}"][data-line-number="${line}"]`) ?? []) {
+    const row = cell.closest('tr');
+    const text = row?.querySelector(`td.diff-text-cell[data-diff-side="${s}"]`) ?? row?.querySelector('td.diff-text-cell');
+    if (text) return text.querySelector('.diff-text-inner') ?? text;
+  }
+  return null;
+}

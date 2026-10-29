@@ -11,10 +11,18 @@ interface Message {
   text: string;
 }
 
+// A line of a GitHub pull request diff, named the way GitHub review comments name it.
+interface DiffLine {
+  file: string;
+  line: number;
+  side?: 'LEFT' | 'RIGHT'; // LEFT: the old file, for removed lines; RIGHT (the default): the new file
+}
+
 export interface Note {
   id: string;
   kind: Kind;
-  quote?: string; // none: a note about the whole page, listed at the top of the panel
+  quote?: string; // with neither quote nor anchor: a note about the whole page, listed at the top of the panel
+  anchor?: DiffLine; // with a quote too, the quote is looked for on that line only
   prefix?: string;
   suffix?: string;
   title?: string;
@@ -79,6 +87,12 @@ function checkNote(n: unknown, at: string, problems: Problems): void {
   if (!str(n.id) || !n.id) problems.push(`${at}.id must be a non-empty string`);
   if (!KINDS.includes(n.kind as Kind)) problems.push(`${at}.kind must be one of ${KINDS.join(', ')}`);
   if (n.quote !== undefined && (!str(n.quote) || !String(n.quote).trim())) problems.push(`${at}.quote must be non-empty text from the page, or left out for a note about the whole page`);
+  if (n.anchor !== undefined) {
+    const a = n.anchor;
+    if (!isObj(a) || !str(a.file) || !a.file || !Number.isInteger(a.line) || (a.line as number) < 1 || (a.side !== undefined && a.side !== 'LEFT' && a.side !== 'RIGHT')) {
+      problems.push(`${at}.anchor needs file, a line number, and optionally side ("LEFT" or "RIGHT")`);
+    }
+  }
   for (const k of ['prefix', 'suffix', 'title', 'body'] as const) if (!optStr(n[k])) problems.push(`${at}.${k} must be a string`);
   if (n.kind === 'step' && typeof n.step !== 'number') problems.push(`${at}.step must be a number for a step`);
   if (n.posted !== undefined && !(str(n.posted) && originPattern(n.posted))) problems.push(`${at}.posted must be the http(s) address of the posted comment`);
@@ -132,6 +146,11 @@ export function parseNotes(json: string): NotesFile {
   return v as NotesFile;
 }
 
+// Where a note sits, in words: its quote, or its diff line.
+export const whereText = (n: Note) => n.quote ?? (n.anchor ? `${n.anchor.file}:${n.anchor.line}${n.anchor.side === 'LEFT' ? ' (old)' : ''}` : '');
+// A note with neither a quote nor a diff line is about the whole page.
+export const isPageNote = (n: Note) => n.quote === undefined && n.anchor === undefined;
+
 // ---------- pages ----------
 
 // The key for a page: its address without the scheme or the #fragment. The query string stays,
@@ -160,7 +179,7 @@ export function originPattern(url: string): string | null {
 // A short fingerprint of everything anchoring depends on, so a placement report can be matched to
 // the notes it was made from. FNV-1a, as hex.
 export function anchorsKey(notes: Pick<NotesFile, 'scope' | 'notes'>): string {
-  const text = JSON.stringify([notes.scope, notes.notes.map(n => [n.id, n.quote, n.prefix, n.suffix])]);
+  const text = JSON.stringify([notes.scope, notes.notes.map(n => [n.id, n.quote, n.prefix, n.suffix, n.anchor])]);
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
   return h.toString(16).padStart(8, '0');
