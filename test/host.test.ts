@@ -271,6 +271,17 @@ test('status --page says when the pull request moved past the notes commit', asy
   assert.match(tater(dir, 'status', '--page', notes.url), /commit: the notes are for abc1234, but the page shows def5678/);
 });
 
+test('mark --posted records the comment, and a later push keeps it', () => {
+  const { dir, file } = pushed();
+  const saved = () => JSON.parse(readFileSync(join(dir, 'data', readdirSync(join(dir, 'data'))[0] ?? '', 'page.json'), 'utf8')) as NotesFile;
+  const comment = 'https://github.com/o/r/pull/1#discussion_r1';
+  assert.match(tater(dir, 'mark', 'n1', '--posted', comment), /marked n1 posted on https:\/\/example\.com\/page/);
+  tater(dir, 'push', file); // the agent's copy has no posted field
+  assert.equal(saved().notes[0]?.posted, comment);
+  assert.throws(() => tater(dir, 'mark', 'n1', '--posted', 'not a url'), /notes\[0\]\.posted must be the http\(s\) address/);
+  assert.throws(() => tater(dir, 'mark', 'nope', '--posted', comment), /no note nope/);
+});
+
 // Retries until read() returns want, for changes that arrive through file watching.
 async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
   for (let i = 0; i < 50; i++) {

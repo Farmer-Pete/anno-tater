@@ -267,6 +267,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       h('div', { class: 'k', style: `color:${kindOf(note).color}` }, label(note)),
       h('h3', null, inline(note.title ?? '')),
       md(note.body),
+      note.posted && h('p', { class: 'posted' }, 'Posted as a comment: ', h('a', { href: note.posted, target: '_blank', rel: 'noopener' }, 'open it')),
       defs.length > 0 && h('div', { class: 'section' }, h('div', { class: 'k', style: `color:${ACCENT}` }, 'Terms here'),
         defs.map(g => h('p', null, h('strong', null, g.term), ': ', inline(g.def)))),
       awayLinks(note),
@@ -606,7 +607,9 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
           ? h('input', { type: 'checkbox', checked: done, onclick: (e: Event) => { e.stopPropagation(); toggleDone(note); } })
           : h('span', { class: 'dot', style: `background:${kindOf(note).color}` }),
         h('span', { class: 'label', style: done ? 'text-decoration:line-through;color:#656d76' : '' }, inline(note.title ?? note.quote ?? '')),
-        unread.has(note.id) && h('span', { class: 'badge' }, 'new'));
+        unread.has(note.id) && h('span', { class: 'badge' }, 'new'),
+        note.posted && h('a', { class: 'badge posted', href: note.posted, target: '_blank', rel: 'noopener', title: 'Open the posted comment',
+          onclick: (e: Event) => e.stopPropagation() }, 'posted'));
       el.dataset.id = note.id;
       return el;
     };

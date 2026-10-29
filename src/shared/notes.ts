@@ -22,6 +22,7 @@ export interface Note {
   step?: number;
   decorate?: Decoration;
   thread?: Message[];
+  posted?: string; // the published comment this note became (set by tater mark)
 }
 
 // A link joins two notes: on this page (an arrow down the margin), or on another page (a row in
@@ -80,6 +81,7 @@ function checkNote(n: unknown, at: string, problems: Problems): void {
   if (n.quote !== undefined && (!str(n.quote) || !String(n.quote).trim())) problems.push(`${at}.quote must be non-empty text from the page, or left out for a note about the whole page`);
   for (const k of ['prefix', 'suffix', 'title', 'body'] as const) if (!optStr(n[k])) problems.push(`${at}.${k} must be a string`);
   if (n.kind === 'step' && typeof n.step !== 'number') problems.push(`${at}.step must be a number for a step`);
+  if (n.posted !== undefined && !(str(n.posted) && originPattern(n.posted))) problems.push(`${at}.posted must be the http(s) address of the posted comment`);
   if (n.decorate !== undefined && !DECORATIONS.includes(n.decorate as Decoration)) problems.push(`${at}.decorate must be one of ${DECORATIONS.join(', ')}`);
   if (n.thread !== undefined) {
     if (!Array.isArray(n.thread)) problems.push(`${at}.thread must be a list`);
