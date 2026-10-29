@@ -19,7 +19,7 @@ Run the CLI as `node <this skill's base directory>/bin/tater.mjs`, called `tater
 6. **Answer every message** with `tater reply <id> "<text>"` (use `-` and stdin for long text). The answer lands in that note's thread, and the page shows the person an alert. Per kind:
    - `reply`: answer the question in the thread. When several messages arrive on one note, `tater reply --note <noteId> "<text>"` answers them all at once, oldest first, so an answer can't land under the wrong message.
    - `ask`: a question about text they selected; your reply becomes a new note anchored there.
-   - `done` / `undone`: a step was ticked; reply if it changes what happens next, otherwise `tater ack <id>`.
+   - `done` / `undone`: a step was ticked; reply if it changes what happens next, otherwise `tater ack <id>`. On a walkthrough where ticks need no answer, start the watcher with `--skip done,undone`: it acks them for you and never wakes you for them.
 
    Done when `tater watch --once --page <url>` prints nothing.
 
