@@ -23,4 +23,4 @@ Run the CLI as `node <this skill's base directory>/bin/tater.mjs`, called `tater
 
    Done when `tater watch --once --page <url>` prints nothing.
 
-To change a note's wording, edit the file and `tater push` it again. Keep each note's `id` stable so threads, ticked steps, and read state carry over; the stored copy keeps the threads. Two sessions working on the same page replace each other's notes and share its replies, so keep one session per page.
+To change a note's wording, edit the file and `tater push` it again. Keep each note's `id` stable so threads, ticked steps, and read state carry over; the stored copy keeps the threads. A page has one owner: `tater push` and `tater open` refuse to replace notes another Claude Code session wrote. Ask the person before taking a page over with `--force`; the two sessions would still share its replies.

@@ -45,6 +45,7 @@ export interface NotesFile {
   links?: Link[];
   glossary?: Term[];
   acked?: string[];
+  session?: string; // the agent session that last pushed these notes (managed by tater)
 }
 
 // What the page sends back. The helper appends these to the page's inbox.
@@ -89,7 +90,7 @@ export function validate(v: unknown): Problems {
   const problems: Problems = [];
   if (!isObj(v)) return ['the notes file must be a JSON object'];
   if (!str(v.url) || !originPattern(String(v.url))) problems.push('url must be the http(s) address of the page');
-  for (const k of ['title', 'scope'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
+  for (const k of ['title', 'scope', 'session'] as const) if (!optStr(v[k])) problems.push(`${k} must be a string`);
   if (!Array.isArray(v.notes)) problems.push('notes must be a list');
   else {
     v.notes.forEach((n, i) => checkNote(n, `notes[${i}]`, problems));
