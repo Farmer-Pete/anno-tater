@@ -78,6 +78,7 @@ function askHelper(page: string): Promise<PageReply | null> {
 // ---------- pages ----------
 const pages = new Map<Port, { url: string; page: string; rev: number; count: number | null; tabId: number | undefined }>();
 const activated = new Set<number>(); // tabs where the person asked to talk about a page with no notes
+const focusing = new Map<number, { page: string; note: string }>(); // tabs opened from a link, and the note to show
 const broadcast = (m: ToPage) => { for (const port of pages.keys()) port.postMessage(m); };
 
 // The page's notes, state, and waiting messages: from the helper when it runs, else from this browser.
@@ -92,7 +93,12 @@ async function refresh(port: Port): Promise<void> {
   if (!notes && info.tabId !== undefined && activated.has(info.tabId)) notes = { url, notes: [] };
   if (info.page === page) info.count = notes ? notes.notes.length : null;
   const message: ToPage = { type: 'page', page, notes, state, pending: fromHelper?.pending ?? [], twoWay: helperState === 'connected', delivered: [...delivered] };
-  try { port.postMessage(message); } catch { pages.delete(port); }
+  try { port.postMessage(message); } catch { pages.delete(port); return; }
+  const focus = info.tabId === undefined ? undefined : focusing.get(info.tabId);
+  if (focus?.page === page && info.tabId !== undefined) {
+    focusing.delete(info.tabId);
+    port.postMessage({ type: 'focus', note: focus.note } satisfies ToPage);
+  }
 }
 
 ext.runtime.onConnect.addListener(port => {
@@ -106,6 +112,11 @@ ext.runtime.onConnect.addListener(port => {
     if (!info) return;
     if (m.type === 'hello') { info.url = m.url; info.page = pageKey(m.url); void refresh(port); }
     else if (m.type === 'send') helper?.postMessage({ type: 'send', message: m.message });
+    else if (m.type === 'open') {
+      void ext.tabs.create({ url: m.url, openerTabId: info.tabId }).then(tab => {
+        if (tab.id !== undefined) focusing.set(tab.id, { page: pageKey(m.url), note: m.note });
+      });
+    }
     else if (helper) helper.postMessage({ type: 'state', page: info.page, state: m.state });
     else void saveLocalState(info.page, m.state);
   });

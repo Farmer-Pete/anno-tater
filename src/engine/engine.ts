@@ -36,6 +36,7 @@ export interface Engine {
   setTwoWay(on: boolean): void;
   setHidden(on: boolean): void;
   isHidden(): boolean;
+  focus(noteId: string): void; // scroll to a note and open its card, once it can
   start(): void;
   destroy(): void;
 }
@@ -94,8 +95,9 @@ function potatoIcon(): SVGSVGElement {
 const label = (n: Note) => (n.kind === 'step' ? `Step ${n.step}` : kindOf(n).label);
 
 // store keeps this browser's view settings; send and saveState go to the helper (or, without it,
-// to this browser's storage) through the content script.
-export function createEngine(store: Store, send: (draft: Draft) => Outgoing, saveState: (patch: Partial<PageState>) => void): Engine {
+// to this browser's storage) through the content script; go opens another page at one of its notes.
+export function createEngine(store: Store, send: (draft: Draft) => Outgoing, saveState: (patch: Partial<PageState>) => void,
+  go: (url: string, noteId: string) => void): Engine {
   let data: NotesFile | null = null;
   let twoWay = false;
   let placed: Placed[] = [];
@@ -267,6 +269,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       md(note.body),
       defs.length > 0 && h('div', { class: 'section' }, h('div', { class: 'k', style: `color:${ACCENT}` }, 'Terms here'),
         defs.map(g => h('p', null, h('strong', null, g.term), ': ', inline(g.def)))),
+      awayLinks(note),
       threadView(note.id),
       ...replyBox('Reply to Claude… (Enter to send, Shift+Enter for a new line)', text => {
         sendDraft({ kind: 'reply', noteId: note.id, quote: note.quote, text });
@@ -281,6 +284,36 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     updateToast();
     const ta = card.querySelector('textarea');
     if (wasTyping && ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+
+  // Links from this note to notes on other pages: one row each, which opens that page at the note.
+  function awayLinks(note: Note): HTMLElement | null {
+    const away = (data?.links ?? []).flatMap(l => (l.from === note.id && typeof l.to === 'object' ? [{ ...l.to, label: l.label }] : []));
+    if (!away.length) return null;
+    return h('div', { class: 'section' }, h('div', { class: 'k', style: `color:${ACCENT}` }, 'See also'),
+      away.map(t => {
+        const where = t.url.replace(/^https?:\/\//, '');
+        return h('p', null, h('a', { href: t.url, title: `${where}, note ${t.note}`, onclick: (e: Event) => {
+          e.preventDefault();
+          if (keyOf(t.url) === keyOf(location.href)) focus(t.note); else go(t.url, t.note);
+        } }, t.label ?? `${t.note} on ${where}`));
+      }));
+  }
+
+  // A note to show as soon as it can be: the page was opened from a link to it.
+  let focusId: string | null = null;
+  function focus(id: string): void {
+    focusId = id;
+    tryFocus();
+  }
+  function tryFocus(): void {
+    if (!focusId || !started) return;
+    const p = placed.find(q => q.note.id === focusId);
+    const n = p ? null : pageNotes.find(q => q.id === focusId);
+    if (!p && !n) return; // not placed yet: render tries again
+    focusId = null;
+    if (hidden()) setHidden(false);
+    if (p) scrollToNote(p); else if (n) openCard(n);
   }
 
   function toggleDone(note: Note): void {
@@ -504,7 +537,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       arrowSvg.append(stepArrow({ x, y, w: 24, h: 24 }, { x: edge - 1, y: first.top + scrollY, w: 2, h: first.height }));
     }
     for (const link of data.links ?? []) {
-      const a = placed.find(p => p.note.id === link.from), b = placed.find(p => p.note.id === link.to);
+      const a = placed.find(p => p.note.id === link.from), b = placed.find(p => typeof link.to === 'string' && p.note.id === link.to);
       const arrow = a && b ? marginArrow(a, b, link.label, kindOf(a.note).color) : null;
       if (arrow) arrowSvg.append(arrow);
     }
@@ -626,6 +659,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     requestAnimationFrame(layout);
     reopen();
     updateToast();
+    tryFocus();
   }
 
   // Tells the agent (through tater status) what placed. Only a change is saved: each save moves the
@@ -687,6 +721,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     setTwoWay(on) { twoWay = on; renderPanel(); reopen(); },
     setHidden,
     isHidden: hidden,
+    focus,
     start() {
       if (dead || started) return;
       started = true;

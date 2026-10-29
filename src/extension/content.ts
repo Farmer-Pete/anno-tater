@@ -33,7 +33,7 @@ if (!g[FLAG]) {
     };
     post({ type: 'send', message });
     return message;
-  }, state => post({ type: 'state', state }));
+  }, state => post({ type: 'state', state }), (url, note) => post({ type: 'open', url, note }));
 
   let loaded = false;
   const startWhenReady = () => {
@@ -56,6 +56,7 @@ if (!g[FLAG]) {
       startWhenReady();
     } else if (m.type === 'delivered') engine.setDelivered(m.ids);
     else if (m.type === 'twoWay') engine.setTwoWay(m.on);
+    else if (m.type === 'focus') engine.focus(m.note);
     else engine.setHidden(!engine.isHidden());
   }
 

@@ -54,7 +54,8 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
     { "id": "n1", "kind": "issue", "quote": "exact text on the page", "prefix": "optional", "suffix": "optional",
       "title": "Short title", "body": "Markdown subset", "decorate": "box", "thread": [] }
   ],
-  "links": [{ "from": "n1", "to": "n2", "label": "same root cause" }],
+  "links": [{ "from": "n1", "to": "n2", "label": "same root cause" },
+            { "from": "n1", "to": { "url": "https://github.com/org/repo/pull/7/changes", "note": "f2" } }],
   "glossary": [{ "term": "NCA", "def": "network-config-analysis" }],
   "acked": []
 }

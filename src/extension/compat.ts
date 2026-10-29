@@ -9,13 +9,15 @@ export const ext: typeof chrome = (globalThis as { browser?: typeof chrome }).br
 export type FromPage =
   | { type: 'hello'; url: string }
   | { type: 'send'; message: Outgoing }
-  | { type: 'state'; state: Partial<PageState> };
+  | { type: 'state'; state: Partial<PageState> }
+  | { type: 'open'; url: string; note: string }; // open another page at one of its notes
 
 export type ToPage =
   // pending: messages for this page that the agent hasn't answered yet
   | { type: 'page'; page: string; notes: NotesFile | null; state: PageState; pending: Outgoing[]; twoWay: boolean; delivered: string[] }
   | { type: 'delivered'; ids: string[] }
   | { type: 'twoWay'; on: boolean }
+  | { type: 'focus'; note: string } // this page was opened from a link to one of its notes
   | { type: 'toggle-hidden' };
 
 // Requests from the popup and the intake page to the background.
