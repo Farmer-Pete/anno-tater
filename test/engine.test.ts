@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { blocks } from '../src/engine/dom.ts';
+import { blocks, tokens } from '../src/engine/dom.ts';
 
 test('a markdown table becomes a table block, with alignment and ragged rows evened out', () => {
   const src = [
@@ -39,4 +39,30 @@ test('paragraphs and lists still split on blank lines', () => {
     { kind: 'p', text: 'One two' },
     { kind: 'ul', items: ['a', 'b'] },
   ]);
+});
+
+test('a fenced code block keeps its blank lines and language, between paragraphs', () => {
+  assert.deepEqual(blocks('Before\n```Python\ndef f():\n\n    return 1\n```\nAfter'), [
+    { kind: 'p', text: 'Before' },
+    { kind: 'code', lang: 'python', text: 'def f():\n\n    return 1' },
+    { kind: 'p', text: 'After' },
+  ]);
+});
+
+test('an unclosed fence runs to the end, and markdown inside a fence stays code', () => {
+  assert.deepEqual(blocks('```\n- not a list\n| a | b |\n| - | - |'), [
+    { kind: 'code', lang: '', text: '- not a list\n| a | b |\n| - | - |' },
+  ]);
+});
+
+test('the highlighter marks comments, strings, numbers, and keywords, and leaves a # inside a string alone', () => {
+  assert.deepEqual(tokens('python', 'if x == "a#b":  # check\n    return 0x1F'), [
+    ['k', 'if'], [null, ' x == '], ['s', '"a#b"'], [null, ':  '], ['c', '# check'], [null, '\n    '], ['k', 'return'], [null, ' '], ['n', '0x1F'],
+  ]);
+  assert.deepEqual(tokens('js', "let s = 'it\\'s'; // done"), [['k', 'let'], [null, ' s = '], ['s', "'it\\'s'"], [null, '; '], ['c', '// done']]);
+  assert.deepEqual(tokens('', 'if 1'), [[null, 'if 1']]);
+});
+
+test('a diff block marks added, removed, and hunk lines', () => {
+  assert.deepEqual(tokens('diff', '@@ -1 +1 @@\n-old\n+new\n same'), [['hunk', '@@ -1 +1 @@'], ['del', '-old'], ['add', '+new'], [null, ' same']]);
 });

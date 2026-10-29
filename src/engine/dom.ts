@@ -50,7 +50,8 @@ type Align = 'left' | 'center' | 'right' | null;
 type Block =
   | { kind: 'p'; text: string }
   | { kind: 'ul'; items: string[] }
-  | { kind: 'table'; align: Align[]; head: string[]; rows: string[][] };
+  | { kind: 'table'; align: Align[]; head: string[]; rows: string[][] }
+  | { kind: 'code'; lang: string; text: string };
 
 // A table row's cells. Outer pipes are optional; "\|" is a literal pipe.
 const cells = (line = ''): string[] =>
@@ -59,16 +60,35 @@ const isRule = (line = '') => line.includes('|') && cells(line).every(c => /^:?-
 const alignOf = (rule: string): Align =>
   rule.startsWith(':') && rule.endsWith(':') ? 'center' : rule.endsWith(':') ? 'right' : rule.startsWith(':') ? 'left' : null;
 
-// Blocks: paragraphs separated by blank lines, lists of "- " lines, and tables
-// (a header row, a "| --- |" rule with the same number of cells, then rows).
+// Blocks: fenced code (``` with an optional language, up to the closing ``` or the end), then
+// paragraphs separated by blank lines, lists of "- " lines, and tables (a header row, a "| --- |"
+// rule with the same number of cells, then rows).
 export function blocks(src: string | undefined): Block[] {
   const out: Block[] = [];
-  const text = (lines: string[]) => {
-    if (!lines.join('').trim()) return;
+  const lines = String(src ?? '').split('\n');
+  let rest: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^ {0,3}```\s*([\w+#.-]*)/.exec(lines[i] ?? '');
+    if (!open) { rest.push(lines[i] ?? ''); continue; }
+    prose(rest.join('\n'), out);
+    rest = [];
+    const close = lines.findIndex((l, j) => j > i && /^ {0,3}```\s*$/.test(l));
+    const end = close < 0 ? lines.length : close;
+    out.push({ kind: 'code', lang: (open[1] ?? '').toLowerCase(), text: lines.slice(i + 1, end).join('\n') });
+    i = end;
+  }
+  prose(rest.join('\n'), out);
+  return out;
+}
+
+function prose(src: string, out: Block[]): void {
+  const text = (all: string[]) => {
+    const lines = all.filter(l => l.trim());
+    if (!lines.length) return;
     if (lines.every(l => /^\s*- /.test(l))) out.push({ kind: 'ul', items: lines.map(l => l.replace(/^\s*- /, '')) });
     else out.push({ kind: 'p', text: lines.join(' ') });
   };
-  for (let lines of String(src ?? '').split(/\n{2,}/).map(b => b.split('\n'))) {
+  for (let lines of src.split(/\n{2,}/).map(b => b.split('\n'))) {
     for (let at = tableAt(lines); at >= 0; at = tableAt(lines)) {
       text(lines.slice(0, at));
       const head = cells(lines[at]);
@@ -80,6 +100,29 @@ export function blocks(src: string | undefined): Block[] {
     }
     text(lines);
   }
+}
+
+// A light highlighter for fenced code with a named language: comments, strings, numbers, and
+// keywords common to most languages. In a diff, added, removed, and hunk lines.
+type Token = [kind: 'c' | 's' | 'n' | 'k' | 'add' | 'del' | 'hunk' | null, text: string];
+const HASH_COMMENTS = new Set(['py', 'python', 'sh', 'bash', 'zsh', 'shell', 'yaml', 'yml', 'toml', 'rb', 'ruby', 'r', 'pl', 'perl', 'dockerfile', 'make', 'makefile']);
+const DASH_COMMENTS = new Set(['sql', 'lua', 'hs', 'haskell']);
+const KEYWORDS = 'and|as|async|await|break|case|catch|class|const|continue|def|default|del|do|elif|else|enum|except|export|extends|false|False|finally|fn|for|from|func|function|if|impl|import|in|interface|is|lambda|let|match|mut|new|nil|None|not|null|or|pass|pub|raise|return|self|static|struct|switch|this|throw|true|True|try|type|typeof|undefined|use|var|void|while|with|yield';
+export function tokens(lang: string, text: string): Token[] {
+  if (lang === 'diff') {
+    return text.split('\n').map(l => [l.startsWith('@@') ? 'hunk' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : null, l]);
+  }
+  if (!lang) return [[null, text]];
+  const comment = HASH_COMMENTS.has(lang) ? '#.*' : DASH_COMMENTS.has(lang) ? '--.*' : '//.*|/\\*[\\s\\S]*?\\*/';
+  const re = new RegExp(`(${comment})|("(?:\\\\.|[^"\\\\\\n])*"|'(?:\\\\.|[^'\\\\\\n])*'|\`(?:\\\\.|[^\`\\\\])*\`)|\\b(0x[\\da-fA-F]+|\\d[\\d_]*(?:\\.\\d+)?)\\b|\\b(${KEYWORDS})\\b`, 'g');
+  const out: Token[] = [];
+  let last = 0;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    if (m.index > last) out.push([null, text.slice(last, m.index)]);
+    out.push([m[1] ? 'c' : m[2] ? 's' : m[3] ? 'n' : 'k', m[0]]);
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push([null, text.slice(last)]);
   return out;
 }
 
@@ -92,7 +135,12 @@ export function md(src: string | undefined): DocumentFragment {
   for (const b of blocks(src)) {
     if (b.kind === 'p') frag.append(h('p', null, inline(b.text)));
     else if (b.kind === 'ul') frag.append(h('ul', null, b.items.map(i => h('li', null, inline(i)))));
-    else {
+    else if (b.kind === 'code') {
+      // A diff gets one block per line (empty lines need a space to keep their height).
+      const diff = b.lang === 'diff';
+      const spans = tokens(b.lang, b.text).map(([k, t]) => (diff ? h('span', { class: k && `tk-${k}` }, t || ' ') : k ? h('span', { class: `tk-${k}` }, t) : t));
+      frag.append(h('pre', { class: diff ? 'code diff' : 'code' }, h('code', null, spans)));
+    } else {
       const row = (tag: 'th' | 'td', cs: string[]) =>
         h('tr', null, cs.map((c, i) => h(tag, { style: b.align[i] && `text-align:${b.align[i]}` }, inline(c))));
       frag.append(h('div', { class: 'table' }, h('table', null, h('thead', null, row('th', b.head)), h('tbody', null, b.rows.map(r => row('td', r))))));
