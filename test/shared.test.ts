@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { decodeFragment, encodeFragment, findQuote, norm, originPattern, pageKey, parseNotes, validate, type NotesFile } from '../src/shared/notes.ts';
+import { anchorsKey, decodeFragment, encodeFragment, findQuote, norm, originPattern, pageKey, parseNotes, validate, type NotesFile } from '../src/shared/notes.ts';
 
 const sample: NotesFile = {
   url: 'https://example.com/docs/page',
@@ -86,4 +86,12 @@ test("the skill reference's example is a valid notes file", () => {
   const doc = readFileSync('skill/reference.md', 'utf8');
   const example = /```json\n([\s\S]*?)\n```/.exec(doc)?.[1] ?? '';
   assert.deepEqual(validate(JSON.parse(example)), []);
+});
+
+test('anchorsKey changes with what anchoring reads, and only that', () => {
+  const base = { scope: 'main', notes: [{ id: 'n1', kind: 'info' as const, quote: 'some text', title: 'A' }] };
+  const key = anchorsKey(base);
+  assert.equal(anchorsKey({ ...base, notes: [{ ...base.notes[0]!, title: 'B', body: 'more' }] }), key);
+  assert.notEqual(anchorsKey({ ...base, notes: [{ ...base.notes[0]!, quote: 'other text' }] }), key);
+  assert.notEqual(anchorsKey({ ...base, scope: 'article' }), key);
 });

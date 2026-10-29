@@ -15,10 +15,21 @@ export interface PageSummary {
   rev: number; // newest modification time of the page's notes, state, and inbox
 }
 
-// What a page remembers across browsers: ticked steps and replies already read.
+// What a page remembers across browsers: ticked steps, replies already read, and what it last placed.
 export interface PageState {
   done: Record<string, boolean>;
   seen?: string[]; // "<noteId>#<index>" of Claude's replies; absent until the page is first shown
+  placement?: Placement;
+}
+
+// How the notes anchored the last time a browser drew the page, for tater status.
+export interface Placement {
+  at: string; // when the page drew them (ISO time)
+  notes: string; // anchorsKey of the notes the page drew
+  placed: number;
+  onPage: number; // notes without a quote
+  unplaced: { id: string; quote: string }[];
+  ambiguous: { id: string; quote: string; matches: number }[]; // placed on the best of several equal matches
 }
 
 export type ToHost =
