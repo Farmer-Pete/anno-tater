@@ -31,6 +31,10 @@ test('validation names each problem', () => {
   assert.ok(problems.includes('links[0] must join two note ids'));
 });
 
+test('a note without a quote is a valid note about the whole page', () => {
+  assert.deepEqual(validate({ url: 'https://example.com/', notes: [{ id: 's', kind: 'info', title: 'Start here' }] }), []);
+});
+
 test('parseNotes reports bad JSON plainly', () => {
   assert.throws(() => parseNotes('{'), /not valid JSON/);
 });

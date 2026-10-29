@@ -57,7 +57,7 @@ const rangeRef = (range: Range): VirtualElement => ({
   getClientRects: () => range.getClientRects(),
   contextElement: range.startContainer.parentElement ?? undefined,
 });
-function float(el: HTMLElement, ref: VirtualElement, placement: 'bottom-start' | 'top-start' | 'top' = 'bottom-start'): () => void {
+function float(el: HTMLElement, ref: VirtualElement, placement: 'bottom-start' | 'top-start' | 'top' | 'left-start' = 'bottom-start'): () => void {
   return autoUpdate(ref, el, () => {
     void computePosition(ref, el, { placement, strategy: 'fixed', middleware: [offset(8), flip(), shift({ padding: 8 })] })
       .then(({ x, y }) => { el.style.left = `${x}px`; el.style.top = `${y}px`; });
@@ -98,6 +98,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   let data: NotesFile | null = null;
   let twoWay = false;
   let placed: Placed[] = [];
+  let pageNotes: Note[] = []; // notes without a quote: about the whole page
   let unplaced: Note[] = [];
   let terms: TermHit[] = [];
   let marks: Mark[] = [];
@@ -252,11 +253,11 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     return [ta, h('div', { class: 'row' }, h('button', { class: 'b primary', onclick: submit }, 'Send to Claude'))];
   }
 
-  function openCard(p: Placed): void {
+  // A placed note's card opens under its text; a page note's card opens beside its panel row.
+  function openCard(note: Note, range: Range | null = null): void {
     const wasTyping = !!card && shadow.activeElement instanceof HTMLTextAreaElement;
     closeCard();
-    const { note, range } = p;
-    const defs = termsIn(range);
+    const defs = range ? termsIn(range) : [];
     const step = note.kind === 'step';
     card = h('div', { class: 'card' },
       h('button', { class: 'x', title: 'Close (Esc)', onclick: closeCard }, '×'),
@@ -268,12 +269,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       threadView(note.id),
       ...replyBox('Reply to Claude… (Enter to send, Shift+Enter for a new line)', text => {
         sendDraft({ kind: 'reply', noteId: note.id, quote: note.quote, text });
-        openCard(p);
+        openCard(note, range);
       }, note.id),
       step && h('div', { class: 'row' }, h('button', { class: 'b', onclick: () => toggleDone(note) }, isDone(note.id) ? 'Mark not done' : 'Mark done')));
     ui.append(card);
     cardNoteId = note.id;
-    cardStop = float(card, rangeRef(range));
+    cardStop = range ? float(card, rangeRef(range)) : float(card, panelRow(note.id), 'left-start');
     setActive(range);
     if (markSeen(note)) { card.scrollTop = card.scrollHeight; renderPanel(); }
     updateToast();
@@ -285,9 +286,15 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     const on = !isDone(note.id);
     setDone(note.id, on);
     if (twoWay) sendDraft({ kind: on ? 'done' : 'undone', noteId: note.id, text: null });
-    const p = placed.find(q => q.note.id === note.id);
-    if (p && cardNoteId === note.id) openCard(p);
+    if (cardNoteId === note.id) reopen();
     renderPins(); layout(); renderPanel();
+  }
+
+  // Redraws the open card, for a note that is still placed or still about the page.
+  function reopen(): void {
+    const p = placed.find(q => q.note.id === cardNoteId);
+    const n = p?.note ?? pageNotes.find(q => q.id === cardNoteId);
+    if (n) openCard(n, p?.range); else if (cardNoteId) closeCard();
   }
 
   function setActive(range: Range | null): void {
@@ -379,7 +386,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       // A note on a link opens the card instead of following the link; Cmd/Ctrl/Shift-click still follows it.
       if (!e.metaKey && !e.ctrlKey && !e.shiftKey) e.preventDefault();
       hideTip();
-      openCard(hit.p);
+      openCard(hit.p.note, hit.p.range);
     } else if (card && !hit) closeCard();
   }
 
@@ -428,7 +435,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     for (const el of pins) el.remove();
     pins = placed.filter(p => p.note.kind === 'step').map(p => {
       const done = isDone(p.note.id);
-      const el = h('div', { class: `pin ${done ? 'done' : ''}`, title: p.note.title ?? '', onclick: () => openCard(p) }, done ? '✓' : String(p.note.step));
+      const el = h('div', { class: `pin ${done ? 'done' : ''}`, title: p.note.title ?? '', onclick: () => openCard(p.note, p.range) }, done ? '✓' : String(p.note.step));
       el.dataset.id = p.note.id;
       marksLayer.append(el);
       return el;
@@ -511,12 +518,16 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     const first = unread[0];
     if (!first) return;
     const p = placed.find(q => q.note.id === first.id);
+    const onPage = pageNotes.includes(first);
     toast = h('div', { class: 'toast' },
       h('div', { class: 'k', style: `color:${ACCENT}` }, unread.length > 1 ? `Claude replied on ${unread.length} notes` : 'Claude replied'),
-      h('div', { style: 'margin:2px 0 8px' }, inline(first.title ?? first.quote)),
+      h('div', { style: 'margin:2px 0 8px' }, inline(first.title ?? first.quote ?? '')),
       h('div', { class: 'row' },
         h('button', { class: 'b', onclick: () => { toast?.remove(); toast = null; } }, 'Later'),
-        p && h('button', { class: 'b primary', onclick: () => { if (hidden()) setHidden(false); scrollToNote(p); } }, 'Open')));
+        (p || onPage) && h('button', { class: 'b primary', onclick: () => {
+          if (hidden()) setHidden(false);
+          if (p) scrollToNote(p); else openCard(first);
+        } }, 'Open')));
     ui.append(toast);
   }
 
@@ -525,7 +536,14 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   ui.append(panel);
   function scrollToNote(p: Placed): void {
     p.range.startContainer.parentElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    setTimeout(() => openCard(p), 350);
+    setTimeout(() => openCard(p.note, p.range), 350);
+  }
+  // A page note's row in the panel, looked up on every read since the panel redraws often. A
+  // collapsed panel opens so the card has a row to sit beside.
+  function panelRow(id: string): VirtualElement {
+    if (!panelOpen()) { store.set('panel-open', true); renderPanel(); }
+    const row = () => panel.querySelector(`.item[data-id="${CSS.escape(id)}"]`) ?? panel;
+    return { getBoundingClientRect: () => row().getBoundingClientRect(), contextElement: panel };
   }
 
   function renderPanel(): void {
@@ -541,26 +559,29 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       h('button', { title: 'Hide or show all markings (Alt+Shift+H)', onclick: () => setHidden(!hidden()) }, hidden() ? 'Show' : 'Hide'),
       !hidden() && h('button', { title: 'Collapse panel', onclick: () => { store.set('panel-open', !panelOpen()); renderPanel(); } }, panelOpen() ? '–' : '+')));
     if (!open) return;
+    const row = (note: Note, onclick: () => void) => {
+      const done = note.kind === 'step' && isDone(note.id);
+      const el = h('div', { class: `item ${unread.has(note.id) ? 'unread' : ''}`, onclick },
+        note.kind === 'step'
+          ? h('input', { type: 'checkbox', checked: done, onclick: (e: Event) => { e.stopPropagation(); toggleDone(note); } })
+          : h('span', { class: 'dot', style: `background:${kindOf(note).color}` }),
+        h('span', { class: 'label', style: done ? 'text-decoration:line-through;color:#656d76' : '' }, inline(note.title ?? note.quote ?? '')),
+        unread.has(note.id) && h('span', { class: 'badge' }, 'new'));
+      el.dataset.id = note.id;
+      return el;
+    };
+    if (pageNotes.length) panel.append(h('div', { class: 'sec' }, h('h4', null, 'On this page'), pageNotes.map(n => row(n, () => openCard(n)))));
     const groups: [Kind, string][] = [['step', 'Steps'], ['issue', 'Problems'], ['caution', 'Caution'], ['agree', 'Looks good'], ['info', 'Context']];
     for (const [kind, title] of groups) {
       const items = placed.filter(p => p.note.kind === kind).toSorted((a, b) => (a.note.step ?? 0) - (b.note.step ?? 0));
-      if (!items.length) continue;
-      panel.append(h('div', { class: 'sec' }, h('h4', null, title), items.map(p => {
-        const done = kind === 'step' && isDone(p.note.id);
-        return h('div', { class: `item ${unread.has(p.note.id) ? 'unread' : ''}`, onclick: () => scrollToNote(p) },
-          kind === 'step'
-            ? h('input', { type: 'checkbox', checked: done, onclick: (e: Event) => { e.stopPropagation(); toggleDone(p.note); } })
-            : h('span', { class: 'dot', style: `background:${KINDS[kind].color}` }),
-          h('span', { class: 'label', style: done ? 'text-decoration:line-through;color:#656d76' : '' }, inline(p.note.title ?? p.note.quote)),
-          unread.has(p.note.id) && h('span', { class: 'badge' }, 'new'));
-      })));
+      if (items.length) panel.append(h('div', { class: 'sec' }, h('h4', null, title), items.map(p => row(p.note, () => scrollToNote(p)))));
     }
     const asks = outbox().filter(m => m.kind === 'ask');
     if (asks.length) panel.append(h('div', { class: 'sec' }, h('h4', null, 'Your questions'), asks.map(m =>
       h('div', { class: 'item miss', title: m.quote ?? '' }, h('span', { class: 'dot', style: `background:${ACCENT}` }),
         h('span', null, m.text ?? '', h('br'), h('span', { class: 'status', style: 'font-size:11px' }, pendingLabel(m.id)))))));
     if (unplaced.length) panel.append(h('div', { class: 'sec' }, h('h4', null, `Couldn't place (${unplaced.length})`),
-      unplaced.map(n => h('div', { class: 'item miss', title: n.quote }, h('span', { class: 'dot', style: 'background:#8c959f' }), inline(n.title ?? n.quote)))));
+      unplaced.map(n => h('div', { class: 'item miss', title: n.quote }, h('span', { class: 'dot', style: 'background:#8c959f' }), inline(n.title ?? n.quote ?? '')))));
     panel.append(h('label', { class: 'opt' },
       h('input', { type: 'checkbox', checked: blockKeys(), onchange: (e: Event) => store.set('block-keys', (e.target as HTMLInputElement).checked) }),
       'Block site shortcuts'));
@@ -582,10 +603,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
 
   function render(): void {
     placed = []; unplaced = []; terms = [];
+    pageNotes = (data?.notes ?? []).filter(n => n.quote === undefined);
     if (data && document.body) {
       const idx = buildIndex(scopeRoot());
       for (const note of data.notes) {
-        const a = anchor(idx, note);
+        if (note.quote === undefined) continue;
+        const a = anchor(idx, { ...note, quote: note.quote });
         if (a) placed.push({ note, ...a }); else unplaced.push(note);
       }
       terms = findTerms(idx, data.glossary);
@@ -593,8 +616,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     paint(); buildMarks(); renderPins(); renderPanel();
     marksLayer.classList.toggle('off', hidden());
     requestAnimationFrame(layout);
-    const p = cardNoteId ? placed.find(q => q.note.id === cardNoteId) : null;
-    if (p) openCard(p); else if (cardNoteId) closeCard();
+    reopen();
     updateToast();
   }
 
@@ -633,10 +655,9 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     setDelivered(ids) {
       delivered = new Set([...delivered, ...ids]);
       renderPanel();
-      const p = cardNoteId ? placed.find(q => q.note.id === cardNoteId) : null;
-      if (p) openCard(p);
+      reopen();
     },
-    setTwoWay(on) { twoWay = on; renderPanel(); const p = cardNoteId ? placed.find(q => q.note.id === cardNoteId) : null; if (p) openCard(p); },
+    setTwoWay(on) { twoWay = on; renderPanel(); reopen(); },
     setHidden,
     isHidden: hidden,
     start() {

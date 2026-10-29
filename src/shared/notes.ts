@@ -14,7 +14,7 @@ interface Message {
 export interface Note {
   id: string;
   kind: Kind;
-  quote: string;
+  quote?: string; // none: a note about the whole page, listed at the top of the panel
   prefix?: string;
   suffix?: string;
   title?: string;
@@ -72,7 +72,7 @@ function checkNote(n: unknown, at: string, problems: Problems): void {
   if (!isObj(n)) { problems.push(`${at} is not an object`); return; }
   if (!str(n.id) || !n.id) problems.push(`${at}.id must be a non-empty string`);
   if (!KINDS.includes(n.kind as Kind)) problems.push(`${at}.kind must be one of ${KINDS.join(', ')}`);
-  if (!str(n.quote) || !String(n.quote).trim()) problems.push(`${at}.quote must be non-empty text from the page`);
+  if (n.quote !== undefined && (!str(n.quote) || !String(n.quote).trim())) problems.push(`${at}.quote must be non-empty text from the page, or left out for a note about the whole page`);
   for (const k of ['prefix', 'suffix', 'title', 'body'] as const) if (!optStr(n[k])) problems.push(`${at}.${k} must be a string`);
   if (n.kind === 'step' && typeof n.step !== 'number') problems.push(`${at}.step must be a number for a step`);
   if (n.decorate !== undefined && !DECORATIONS.includes(n.decorate as Decoration)) problems.push(`${at}.decorate must be one of ${DECORATIONS.join(', ')}`);
