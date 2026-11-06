@@ -19,7 +19,10 @@ function handle(raw: unknown): void {
   try {
     if (message.type === 'get') {
       const { page } = message;
-      send({ type: 'page', page, notes: findPage(page), state: readState(page), pending: pending(page) });
+      // The page never reads its placement report (it's for tater status), and the report repeats
+      // the quotes that didn't place, so it stays out of the reply.
+      const { placement: _, ...state } = readState(page);
+      send({ type: 'page', page, notes: findPage(page), state, pending: pending(page) });
     } else if (message.type === 'send') {
       appendInbox(message.message);
       send({ type: 'sent', id: message.message.id });
@@ -27,7 +30,7 @@ function handle(raw: unknown): void {
       saveState(message.page, message.state);
     }
   } catch (e) {
-    send({ type: 'error', message: (e as Error).message });
+    send({ type: 'error', message: (e as Error).message, ...(message.type === 'get' ? { page: message.page } : {}) });
   }
 }
 
@@ -50,7 +53,7 @@ const onChange = debounced(() => {
 mkdirSync(dataDir(), { recursive: true });
 watch(dataDir(), { recursive: true }, (_event, file) => { if (!String(file).startsWith('bin')) onChange(); });
 
-process.stdin.on('data', decoder(handle));
+process.stdin.on('data', decoder(handle, e => send({ type: 'error', message: `dropped a message that isn't a JSON object: ${e.message}` })));
 process.stdin.on('end', () => process.exit(0));
 send({ type: 'hello', pages: pages(), delivered: [...lastDelivered].slice(-500) });
 log(`started for ${process.argv.slice(2).join(' ')}; data in ${dataDir()}`);

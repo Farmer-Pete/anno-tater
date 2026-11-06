@@ -8,7 +8,7 @@
 import { autoUpdate, computePosition, flip, offset, shift, size, type VirtualElement } from '@floating-ui/dom';
 import { getBoxToBoxArrow } from 'perfect-arrows';
 import { annotate } from 'rough-notation';
-import { anchorsKey, isPageNote, norm, pageKey as keyOf, whereText, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { anchorsKey, isPageNote, MAX_QUOTE, MAX_TEXT, norm, pageKey as keyOf, whereText, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import type { PageState, Placement } from '../shared/protocol.ts';
 import { anchor, buildIndex, context, findTerms, textRange } from './anchor.ts';
 import { h, inline, md, svg } from './dom.ts';
@@ -282,7 +282,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
 
   function replyBox(placeholder: string, onSubmit: (text: string) => void, draftKey: string): HTMLElement[] {
     if (!twoWay) return [h('div', { class: 'hint' }, 'Replies need the Anno Tater helper. Run ', h('code', null, 'npm run tater -- install'), ' once.')];
-    const ta = h('textarea', { placeholder });
+    const ta = h('textarea', { placeholder, maxlength: MAX_TEXT });
     ta.value = drafts[draftKey] ?? '';
     ta.addEventListener('input', () => { drafts[draftKey] = ta.value; });
     const submit = () => {
@@ -312,7 +312,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       awayLinks(note),
       threadView(note.id),
       ...replyBox('Reply to Claude… (Enter to send, Shift+Enter for a new line)', text => {
-        sendDraft({ kind: 'reply', noteId: note.id, quote: note.quote, text });
+        sendDraft({ kind: 'reply', noteId: note.id, quote: note.quote?.slice(0, MAX_QUOTE), text });
         openCard(note, range);
       }, note.id),
       h('div', { class: 'row' },
@@ -400,8 +400,11 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   }
   function openAsk(range: Range): void {
     closeCard();
-    const quote = norm(range.toString());
-    const { prefix, suffix } = context(scopeRoot(), range);
+    // A selection longer than MAX_QUOTE is cut, and its suffix is the selected text after the cut.
+    const all = norm(range.toString());
+    const quote = all.slice(0, MAX_QUOTE).trimEnd();
+    const { prefix, suffix: after } = context(scopeRoot(), range);
+    const suffix = quote.length < all.length ? all.slice(quote.length).trimStart().slice(0, 32) : after;
     card = h('div', { class: 'card' },
       h('button', { class: 'x', onclick: closeCard }, '×'),
       h('div', { class: 'k', style: `color:${ACCENT}` }, 'Ask Claude'),
@@ -693,7 +696,19 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   }
 
   // ---------- anchoring + re-anchoring ----------
-  const scopeRoot = () => (data?.scope && document.querySelector(data.scope)) || document.querySelector('main') || document.body;
+  // The element notes place within. A scope that isn't a valid selector, or matches nothing,
+  // falls back to main or the body, and the placement report says so.
+  function scoped(): { root: Element; problem?: Placement['scopeProblem'] } {
+    const root = document.querySelector('main') ?? document.body;
+    if (!data?.scope) return { root };
+    try {
+      const el = document.querySelector(data.scope);
+      return el ? { root: el } : { root, problem: 'no match' };
+    } catch {
+      return { root, problem: 'invalid' };
+    }
+  }
+  const scopeRoot = () => scoped().root;
 
   function render(): void {
     placed = []; unplaced = []; terms = [];
@@ -728,6 +743,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       unplaced: unplaced.map(n => ({ id: n.id, quote: whereText(n) })),
       ambiguous: placed.filter(p => p.ambiguous).map(p => ({ id: p.note.id, quote: whereText(p.note), matches: p.matches })),
       commit: headCommit() ?? undefined,
+      scopeProblem: scoped().problem,
     };
     const key = JSON.stringify(report);
     if (key === lastReport) return;

@@ -64,6 +64,11 @@ function onHelper(raw: unknown): void {
     broadcast({ type: 'delivered', ids: m.ids });
   } else if (m.type === 'error') {
     console.warn('Anno Tater helper:', m.message);
+    // The helper couldn't read or send a page: stop waiting for it.
+    if (m.page) {
+      for (const r of waiting.get(m.page) ?? []) r(null);
+      waiting.delete(m.page);
+    }
   }
 }
 
@@ -88,8 +93,11 @@ async function refresh(port: Port): Promise<void> {
   const { page, url } = info; // a single-page app can move on while we wait
   info.rev = revOf(page);
   const fromHelper = helper ? await askHelper(page) : null;
-  let notes = fromHelper ? fromHelper.notes : (await localPages())[page] ?? null;
-  const state = fromHelper?.state ?? await localState(page);
+  // A failed read with the helper still connected shows nothing: this browser's copy is stale, and
+  // the page's state writes would go to the helper.
+  const failed = !fromHelper && helper !== null;
+  let notes = fromHelper ? fromHelper.notes : failed ? null : (await localPages())[page] ?? null;
+  const state = fromHelper?.state ?? (failed ? { done: {} } : await localState(page));
   if (!notes && info.tabId !== undefined && activated.has(info.tabId)) notes = { url, notes: [] };
   if (info.page === page) info.count = notes ? notes.notes.length : null;
   const message: ToPage = { type: 'page', page, notes, state, pending: fromHelper?.pending ?? [], twoWay: helperState === 'connected', delivered: [...delivered] };

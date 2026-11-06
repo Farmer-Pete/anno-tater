@@ -63,6 +63,11 @@ export interface NotesFile {
   session?: string; // the agent session that last pushed these notes (managed by tater)
 }
 
+// Limits on what the page sends: a message's text, and the quote it's about. A longer quote is cut
+// to its start, which is still text on the page, so it still anchors.
+export const MAX_TEXT = 10_000;
+export const MAX_QUOTE = 1000;
+
 // What the page sends back. The helper appends these to the page's inbox.
 export interface Outgoing {
   id: string;

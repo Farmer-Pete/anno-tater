@@ -10,8 +10,9 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
+import { MAX_QUOTE, MAX_TEXT, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
 import { mergeState, type PageState } from '../shared/protocol.ts';
+import { MAX_NOTES, MAX_PENDING, MAX_STATE } from './framing.ts';
 
 export const dataDir = () =>
   process.env.ANNO_TATER_HOME ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'anno-tater');
@@ -37,8 +38,13 @@ function writeAtomic(path: string, text: string): void {
   renameSync(tmp, path);
 }
 
+const bytes = (v: unknown) => Buffer.byteLength(JSON.stringify(v), 'utf8');
+
 // ---------- notes ----------
+// Refuses notes too big for the browser to take, threads included.
 export function savePage(notes: NotesFile): string {
+  const size = bytes(notes);
+  if (size > MAX_NOTES) throw new Error(`the notes for ${notes.url} would be ${size} bytes; a page's notes, threads included, can be at most ${MAX_NOTES}, so the browser can take them`);
   const path = notesFile(pageKey(notes.url));
   writeAtomic(path, `${JSON.stringify(notes, null, 2)}\n`);
   return path;
@@ -83,13 +89,21 @@ export function readState(page: string): PageState {
   }
 }
 
+// Refuses a change that would take the state past its share of the browser's limit.
 export function saveState(page: string, patch: Partial<PageState>): void {
-  const now = readState(page);
-  writeAtomic(stateFile(page), JSON.stringify(mergeState(now, patch)));
+  const { placement, ...next } = mergeState(readState(page), patch);
+  if (bytes(next) > MAX_STATE) throw new Error(`the shared state for ${page} would be over ${MAX_STATE} bytes`);
+  writeAtomic(stateFile(page), JSON.stringify(placement ? { ...next, placement } : next));
 }
 
 // ---------- messages ----------
+// Refuses a message over the size limits, or one that would take the page's unanswered messages
+// past their share of the browser's limit, which would leave the page without its notes.
 export function appendInbox(message: Outgoing): void {
+  if ((message.text?.length ?? 0) > MAX_TEXT || (message.quote?.length ?? 0) > MAX_QUOTE) throw new Error(`message ${message.id} is over the size limit`);
+  if (bytes([...pending(message.page), message]) > MAX_PENDING) {
+    throw new Error(`${message.page} has too many unanswered messages; answer or ack them first`);
+  }
   mkdirSync(pageDir(message.page), { recursive: true });
   appendFileSync(inboxFile(message.page), `${JSON.stringify(message)}\n`);
 }

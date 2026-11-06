@@ -66,9 +66,12 @@ const short = (id: string) => id.slice(0, 8);
 // The page's notes. A question asked on a page without notes starts a notes file there.
 const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: m.url, notes: [], session };
 
+// Saves a page's notes, or stops with the reason they can't be saved (too big for the browser).
+const save = (notes: NotesFile) => { try { return savePage(notes); } catch (e) { return fail((e as Error).message); } };
+
 function saveWithAck(page: NotesFile, ids: string[]): void {
   page.acked = [...new Set([...(page.acked ?? []), ...ids])];
-  savePage(page);
+  save(page);
 }
 
 async function readText(arg: string | undefined): Promise<string> {
@@ -156,6 +159,7 @@ function placementLines(p: NotesFile): string[] {
   if (p.commit && r.commit && !r.commit.startsWith(p.commit.toLowerCase())) lines.push(`commit: the notes are for ${p.commit.slice(0, 7)}, but the page shows ${r.commit.slice(0, 7)}`);
   for (const u of r.unplaced) lines.push(`unplaced: ${u.id} ${JSON.stringify(u.quote)}`);
   for (const a of r.ambiguous) lines.push(`ambiguous: ${a.id} ${JSON.stringify(a.quote)} (${a.matches} matches; add prefix or suffix)`);
+  if (r.scopeProblem) lines.push(`scope: ${JSON.stringify(p.scope)} ${r.scopeProblem === 'invalid' ? 'is not a valid CSS selector' : 'matches nothing on the page'}; notes placed within main or the body`);
   return lines;
 }
 
@@ -211,7 +215,7 @@ function store(file: string, force: boolean): NotesFile {
     note.thread ??= old?.thread;
     note.posted ??= old?.posted;
   }
-  console.log(`saved ${savePage(merged)}`);
+  console.log(`saved ${save(merged)}`);
   console.log(`replies: tater watch --page ${notes.url}`);
   return merged;
 }
@@ -271,7 +275,7 @@ switch (values.help ? 'help' : command) {
       if (note) note.posted = url;
       const problems = validate(page);
       if (problems.length) fail(problems.join('\n'));
-      savePage(page);
+      save(page);
       console.log(`marked ${id} posted on ${page.url}`);
     }
     break;
