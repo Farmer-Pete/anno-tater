@@ -120,7 +120,12 @@ export function migrate(): void {
   for (const [path, mode] of [[dataDir(), PRIVATE_DIR], [pagesDir(), PRIVATE_DIR], [deliveredFile(), PRIVATE_FILE]] as const) {
     try { chmodSync(path, mode); } catch (e) { if (!isMissing(e)) clean = false; }
   }
-  for (const name of readdirSync(pagesDir())) if (!makePrivate(join(pagesDir(), name))) clean = false;
+  for (const name of readdirSync(pagesDir())) {
+    const dir = join(pagesDir(), name);
+    let folder = false;
+    try { folder = statSync(dir).isDirectory(); } catch { /* moved meanwhile */ }
+    if (folder && !makePrivate(dir)) clean = false; // skips stray files such as .DS_Store
+  }
   if (clean) writeFileSync(layoutFile(), `${LAYOUT}\n`, { mode: PRIVATE_FILE });
 }
 

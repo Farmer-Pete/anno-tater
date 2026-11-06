@@ -515,11 +515,12 @@ test('tater moves an older data folder to the current layout', () => {
   mkdirSync(stateOnly);
   writeFileSync(join(stateOnly, 'state.json'), '{"done":{}}');
   writeFileSync(join(withNotes, 'state.json'), '{"done":{"n1":true}}');
+  writeFileSync(join(dir, 'data', '.DS_Store'), '');
   chmodSync(join(withNotes, 'page.json'), 0o644);
   chmodSync(join(asked, 'inbox.jsonl'), 0o644);
   chmodSync(dir, 0o755);
   assert.match(tater(dir, 'status'), /page: https:\/\/example\.com\/page \(1 notes\)/);
-  const folders = readdirSync(join(dir, 'data')).toSorted();
+  const folders = readdirSync(join(dir, 'data')).filter(f => f !== '.DS_Store').toSorted();
   assert.deepEqual(folders.filter(f => !/-[0-9a-f]{16}$/.test(f)), [layout1Name('example.org/s')]);
   assert.equal(folders.length, 3);
   const moved = (prefix: string) => join(dir, 'data', folders.find(f => f.startsWith(prefix) && /-[0-9a-f]{16}$/.test(f)) ?? '');
