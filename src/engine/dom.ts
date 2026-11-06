@@ -40,12 +40,19 @@ export function inline(text: string): Child[] {
     if (m.index > last) out.push(text.slice(last, m.index));
     if (m[1] != null) out.push(h('code', null, m[1]));
     else if (m[2] != null) out.push(h('strong', null, m[2]));
-    else if (/^https?:/.test(m[4] ?? '')) out.push(h('a', { href: m[4], target: '_blank', rel: 'noopener' }, m[3]));
+    else if (/^https?:/.test(m[4] ?? '')) out.push(...link(m[4] ?? '', m[3] ?? ''));
     else out.push(m[3]); // only web links; anything else (javascript:, data:) stays plain text
     last = re.lastIndex;
   }
   if (last < text.length) out.push(text.slice(last));
   return out;
+}
+
+// A web link opened in a new tab, with its host beside the text, since the text can name any place.
+export function link(href: string, text: Child, title?: string): Child[] {
+  let host = '';
+  try { host = new URL(href).host; } catch { return [text]; }
+  return [h('a', { href, target: '_blank', rel: 'noopener noreferrer', title: title ?? href }, text), h('span', { class: 'host' }, ` (${host})`)];
 }
 
 type Align = 'left' | 'center' | 'right' | null;

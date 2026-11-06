@@ -10,13 +10,26 @@ interface TextIndex {
   offs: number[];
 }
 
-export function buildIndex(root: Element): TextIndex {
+// Whether CSS shows an element: not display none, visibility hidden, or opacity 0, on it or an
+// ancestor. Page tricks like off-screen or same-color text still count as shown.
+function shownBy(): (el: Element | null) => boolean {
+  const seen = new Map<Element, boolean>();
+  return el => {
+    if (!el) return false;
+    if (!seen.has(el)) seen.set(el, el.checkVisibility({ opacityProperty: true, visibilityProperty: true }));
+    return seen.get(el) ?? false;
+  };
+}
+
+// The page text under root; with onlyVisible, without the text CSS hides.
+export function buildIndex(root: Element, onlyVisible = false): TextIndex {
   const nodes: Text[] = [], offs: number[] = [];
   let text = '', lastSpace = true;
+  const shown = shownBy();
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
       for (let e = n.parentElement; e && e !== root; e = e.parentElement) if (SKIP.has(e.tagName)) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
+      return !onlyVisible || shown(n.parentElement) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     },
   });
   for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
@@ -89,4 +102,18 @@ export function context(root: Element, range: Range, n = 32): { prefix: string; 
   after.setStart(range.endContainer, range.endOffset);
   after.setEnd(root, root.childNodes.length);
   return { prefix: norm(before.toString()).slice(-n), suffix: norm(after.toString()).slice(0, n) };
+}
+
+// A range's text without what CSS hides, which Range.toString() keeps.
+export function visibleText(range: Range): string {
+  const root = range.commonAncestorContainer;
+  const shown = shownBy();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let out = '';
+  for (let n: Node | null = root.nodeType === Node.TEXT_NODE ? root : walker.nextNode(); n; n = walker.nextNode()) {
+    if (!range.intersectsNode(n) || !shown(n.parentElement)) continue;
+    const text = (n as Text).data;
+    out += text.slice(n === range.startContainer ? range.startOffset : 0, n === range.endContainer ? range.endOffset : text.length);
+  }
+  return out;
 }
