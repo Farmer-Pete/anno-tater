@@ -394,8 +394,9 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     setTimeout(() => {
       const sel = document.getSelection();
       hideAsk();
-      if (!sel || sel.isCollapsed || !norm(sel.toString())) return;
+      if (!sel || sel.isCollapsed) return;
       const range = sel.getRangeAt(0).cloneRange();
+      if (!norm(visibleText(range))) return; // nothing selected the person can see
       askBtn = h('div', { class: 'ask' }, h('button', { onclick: () => { hideAsk(); openAsk(range); } }, 'Ask Claude'));
       ui.append(askBtn);
       askStop = float(askBtn, rangeRef(range), 'top');

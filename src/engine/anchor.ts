@@ -10,15 +10,24 @@ interface TextIndex {
   offs: number[];
 }
 
-// Whether CSS shows an element: not display none, visibility hidden, or opacity 0, on it or an
-// ancestor. Page tricks like off-screen or same-color text still count as shown.
+// Whether CSS shows the text in an element: it has a box (checkVisibility: not display none, not
+// in a closed details or content-visibility hidden; a display: contents wrapper has no box of its
+// own, so its parent decides), its visibility is visible, and no ancestor has opacity 0. Opacity
+// and visibility are read by hand: checkVisibility's options for them need Chrome 121. Page
+// tricks like off-screen or same-color text still count as shown.
 function shownBy(): (el: Element | null) => boolean {
   const seen = new Map<Element, boolean>();
-  return el => {
-    if (!el) return false;
-    if (!seen.has(el)) seen.set(el, el.checkVisibility({ opacityProperty: true, visibilityProperty: true }));
-    return seen.get(el) ?? false;
+  const boxed = (el: Element | null): boolean => {
+    if (!el) return true;
+    let ok = seen.get(el);
+    if (ok === undefined) {
+      const style = getComputedStyle(el);
+      ok = (style.display === 'contents' || el.checkVisibility()) && style.opacity !== '0' && boxed(el.parentElement);
+      seen.set(el, ok);
+    }
+    return ok;
   };
+  return el => el !== null && getComputedStyle(el).visibility === 'visible' && boxed(el);
 }
 
 // The page text under root; with onlyVisible, without the text CSS hides.
