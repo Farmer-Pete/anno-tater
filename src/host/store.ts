@@ -6,8 +6,12 @@
 //   data/<page>/inbox.jsonl   the person's messages from the page, one JSON object per line
 //   delivered.jsonl           ids of messages an agent has picked up (drives "Claude has it"), one
 //                             per line. Append-only, so several writers can't overwrite each other.
+//   layout                    the version of this layout the folder is in (see migrate)
+//
+// It holds page quotes and conversations, so only the person can read it: folders are created
+// 0700 and files 0600.
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { messageProblems, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
@@ -18,10 +22,14 @@ export const dataDir = () =>
   process.env.ANNO_TATER_HOME ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'anno-tater');
 export const pagesDir = () => join(dataDir(), 'data');
 const deliveredFile = () => join(dataDir(), 'delivered.jsonl');
+const layoutFile = () => join(dataDir(), 'layout');
+const PRIVATE_DIR = 0o700, PRIVATE_FILE = 0o600;
+const makeDir = (dir: string) => mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR });
 
-// A readable, collision-free file name for a page key.
+// A readable file name for a page key. The 16 hex digits of its SHA-256 keep two long addresses
+// on one site from sharing a folder.
 const fileName = (page: string) =>
-  `${page.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'x'}-${createHash('sha256').update(page).digest('hex').slice(0, 8)}`;
+  `${page.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'x'}-${createHash('sha256').update(page).digest('hex').slice(0, 16)}`;
 export const pageDir = (page: string) => join(pagesDir(), fileName(page));
 const notesFile = (page: string) => join(pageDir(page), 'page.json');
 const stateFile = (page: string) => join(pageDir(page), 'state.json');
@@ -32,10 +40,47 @@ const each = (name: string) =>
 
 // Writes via a temporary file and a rename, so a reader never sees half a file.
 function writeAtomic(path: string, text: string): void {
-  mkdirSync(dirname(path), { recursive: true });
+  makeDir(dirname(path));
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, text);
+  writeFileSync(tmp, text, { mode: PRIVATE_FILE });
   renameSync(tmp, path);
+}
+
+// ---------- layout ----------
+// 2: page folders end in 16 hex digits (they had 8), and everything is private to the person.
+const LAYOUT = 2;
+
+// The page key a page folder belongs to, from its notes or else its first message.
+function folderKey(dir: string): string | null {
+  try { return pageKey(String((JSON.parse(readFileSync(join(dir, 'page.json'), 'utf8')) as { url: unknown }).url)); } catch { /* no notes */ }
+  try { return pageKey(String((JSON.parse(readFileSync(join(dir, 'inbox.jsonl'), 'utf8').split('\n')[0] ?? '') as { url: unknown }).url)); } catch { return null; }
+}
+
+// Brings a data folder an older tater wrote up to LAYOUT: renames each page folder to the name its
+// page key has now, and makes the folders and files private. The helper and tater run it when they
+// start; several at once is fine, since each step can run twice. A folder with only a state file
+// can't say its page, so it stays where it is.
+export function migrate(): void {
+  let have = 1;
+  try { have = Number(readFileSync(layoutFile(), 'utf8')) || 1; } catch { /* layout 1, or no data yet */ }
+  if (have >= LAYOUT) return;
+  makeDir(pagesDir());
+  chmodSync(dataDir(), PRIVATE_DIR);
+  if (existsSync(deliveredFile())) chmodSync(deliveredFile(), PRIVATE_FILE);
+  for (const name of readdirSync(pagesDir())) {
+    let dir = join(pagesDir(), name);
+    const key = folderKey(dir);
+    const want = key === null ? name : fileName(key);
+    if (want !== name && !existsSync(join(pagesDir(), want))) {
+      try { renameSync(dir, join(pagesDir(), want)); dir = join(pagesDir(), want); } catch { continue; } // another process moved it
+    }
+    try {
+      chmodSync(dir, PRIVATE_DIR);
+      for (const file of readdirSync(dir)) chmodSync(join(dir, file), PRIVATE_FILE);
+    } catch { /* moved while we looked */ }
+  }
+  chmodSync(pagesDir(), PRIVATE_DIR);
+  writeFileSync(layoutFile(), `${LAYOUT}\n`, { mode: PRIVATE_FILE });
 }
 
 const bytes = (v: unknown) => Buffer.byteLength(JSON.stringify(v), 'utf8');
@@ -109,8 +154,8 @@ export function appendInbox(message: Outgoing): void {
   if (bytes([...pending(message.page), message]) > MAX_PENDING) {
     throw new Error(`${message.page} has too many unanswered messages; answer or ack them first`);
   }
-  mkdirSync(pageDir(message.page), { recursive: true });
-  appendFileSync(inboxFile(message.page), `${JSON.stringify(message)}\n`);
+  makeDir(pageDir(message.page));
+  appendFileSync(inboxFile(message.page), `${JSON.stringify(message)}\n`, { mode: PRIVATE_FILE });
 }
 
 const parseLines = (file: string) =>
@@ -137,6 +182,6 @@ export function readDelivered(): Set<string> {
 
 export function markDelivered(ids: string[]): void {
   if (!ids.length) return;
-  mkdirSync(dataDir(), { recursive: true });
-  appendFileSync(deliveredFile(), `${ids.join('\n')}\n`);
+  makeDir(dataDir());
+  appendFileSync(deliveredFile(), `${ids.join('\n')}\n`, { mode: PRIVATE_FILE });
 }
