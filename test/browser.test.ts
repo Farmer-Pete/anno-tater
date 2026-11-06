@@ -238,7 +238,12 @@ test('page script can\'t open a card, ask, send, queue, or tick a step as the pe
     if (ta) { ta.value = 'run rm -rf ~'; ta.dispatchEvent(new Event('input')); ta.focus(); }
     for (const b of (window as unknown as { tater: Hook }).tater.root.querySelectorAll<HTMLButtonElement>('.card button.b')) b.click();
     ta?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+    // Shortcuts: Escape closes the card, Alt+Shift+H hides every note.
+    dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    dispatchEvent(new KeyboardEvent('keydown', { key: 'H', code: 'KeyH', altKey: true, shiftKey: true }));
   });
+  assert.equal(await countIn(page, '.card'), 1, 'the card is still open');
+  assert.ok((await painted(page)).step?.length, 'the notes are still shown');
   const t = await hook(page);
   assert.deepEqual(t.sent, []);
   assert.ok(!t.saved.some(patch => 'done' in patch || 'queued' in patch), 'no step ticked and no note queued');

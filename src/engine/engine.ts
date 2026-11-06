@@ -190,14 +190,16 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     if (!data) return;
     const path = e.composedPath();
     const inOurUi = path.includes(host);
-    if (e.type === 'keydown') {
+    // Shortcuts act only on keys the person pressed: page script could otherwise close a card or
+    // hide every note.
+    if (e.type === 'keydown' && e.isTrusted) {
       if (e.key === 'Escape') { closeCard(); hideAsk(); }
       if (e.altKey && e.shiftKey && e.code === 'KeyH') { e.preventDefault(); setHidden(!hidden()); }
       // Enter sends, Shift+Enter adds a line. Handled here because stopImmediatePropagation below
       // keeps the event from reaching the textarea. Seen from window, an event in a closed shadow
       // root comes from the host, so the textarea is the root's focused element.
       const box = shadow.activeElement;
-      if (inOurUi && e.isTrusted && e.key === 'Enter' && !e.shiftKey && !e.isComposing && box instanceof HTMLTextAreaElement && submitters.has(box)) {
+      if (inOurUi && e.key === 'Enter' && !e.shiftKey && !e.isComposing && box instanceof HTMLTextAreaElement && submitters.has(box)) {
         e.preventDefault();
         submitters.get(box)?.();
       }
