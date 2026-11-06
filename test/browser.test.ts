@@ -9,17 +9,23 @@ import type { NotesFile } from '../src/shared/notes.ts';
 
 // The engine bundled the way the content script bundles it, plus a hook to start it on a page. It
 // records what the engine sends, saves, and opens, instead of talking to the extension.
+// Playwright's locators only see into open shadow roots, so the hook attaches the engine's root
+// open unless a test asks for it closed, and keeps the mode the engine asked for and the root.
+// Events behave differently around a closed root, so tests of input use one.
 const HOOK = `
 import { createEngine } from './src/engine/engine.ts';
 const view = new Map();
 const t = { sent: [], saved: [], opened: [] };
-t.boot = (notes, twoWay = true) => {
+const attach = Element.prototype.attachShadow;
+Element.prototype.attachShadow = function (init) { t.mode = init.mode; t.root = attach.call(this, t.closed ? init : { ...init, mode: 'open' }); return t.root; };
+t.boot = (notes, closed) => {
+  t.closed = closed;
   const engine = createEngine(
     { get: (k, fallback) => (view.has(k) ? view.get(k) : fallback), set: (k, v) => view.set(k, v) },
     draft => { const m = { ...draft, id: 'm' + t.sent.length, at: '', page: '', url: location.href }; t.sent.push(m); return m; },
     patch => t.saved.push(patch),
     (url, note) => t.opened.push({ url, note }));
-  engine.load(notes, { twoWay, state: { done: {} }, pending: [] });
+  engine.load(notes, { twoWay: true, state: { done: {} }, pending: [] });
   engine.start();
   t.engine = engine;
 };
@@ -38,12 +44,12 @@ after(() => browser.close());
 const URL = 'https://github.com/o/r/pull/1/changes';
 
 // A page at URL with this body, and the engine started on these notes.
-async function open(body: string, notes: Omit<NotesFile, 'url'>): Promise<Page> {
+async function open(body: string, notes: Omit<NotesFile, 'url'>, closed = false): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.route(URL, route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><body><main>${body}</main></body></html>` }));
   await page.goto(URL);
   await page.addScriptTag({ content: engine });
-  await page.evaluate(n => (window as unknown as { tater: { boot(n: unknown): void } }).tater.boot(n), { url: URL, ...notes });
+  await page.evaluate(([n, c]) => (window as unknown as { tater: { boot(n: unknown, c: boolean): void } }).tater.boot(n, c), [{ url: URL, ...notes }, closed] as const);
   await page.waitForTimeout(100);
   return page;
 }
@@ -54,6 +60,20 @@ const painted = (page: Page) => page.evaluate(() => Object.fromEntries(['issue',
 
 // Something inside the engine's shadow root.
 const shadow = (page: Page, css: string) => page.locator('#anno-tater-host').locator(css);
+
+// For a closed root, which locators can't see into: how many elements match, and a real click
+// on the first.
+type Hook = { root: ShadowRoot; sent: { kind: string; noteId: string; text: string }[]; saved: Record<string, unknown>[]; mode: string };
+const hook = (page: Page) => page.evaluate(() => { const { tater } = window as unknown as { tater: Hook }; return { mode: tater.mode, sent: tater.sent, saved: tater.saved }; });
+const countIn = (page: Page, css: string) => page.evaluate(c => (window as unknown as { tater: Hook }).tater.root.querySelectorAll(c).length, css);
+async function clickIn(page: Page, css: string): Promise<void> {
+  const box = await page.evaluate(c => {
+    const b = (window as unknown as { tater: Hook }).tater.root.querySelector(c)?.getBoundingClientRect();
+    return b && { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  }, css);
+  assert.ok(box, `nothing matches ${css}`);
+  await page.mouse.click(box.x, box.y);
+}
 
 // What the engine saved through saveState, newest last.
 const saved = (page: Page) => page.evaluate(() => (window as unknown as { tater: { saved: Record<string, unknown>[] } }).tater.saved);
@@ -185,15 +205,51 @@ test('a card renders the note body: line breaks, quotes, lists, tables, and code
 });
 
 test('a reply from the card goes out with the note id and its line breaks', async () => {
-  const page = await open(PROSE, { notes: [{ id: 'n', kind: 'info', quote: 'Lock out the breaker.' }] });
+  const page = await open(PROSE, { notes: [{ id: 'n', kind: 'info', quote: 'Lock out the breaker.' }] }, true);
   await clickText(page, 'Lock out the breaker.');
-  await shadow(page, '.card textarea').click();
+  await clickIn(page, '.card textarea');
   await page.keyboard.type('> quoted');
   await page.keyboard.press('Shift+Enter');
   await page.keyboard.type('question');
   await page.keyboard.press('Enter');
-  const sent = await page.evaluate(() => (window as unknown as { tater: { sent: { kind: string; noteId: string; text: string }[] } }).tater.sent);
+  const { sent } = await hook(page);
   assert.deepEqual(sent.map(m => [m.kind, m.noteId, m.text]), [['reply', 'n', '> quoted\nquestion']]);
+});
+
+test('page script can\'t open a card, ask, send, queue, or tick a step as the person', async () => {
+  const page = await open(PROSE, { notes: [{ id: 's', kind: 'step', step: 1, quote: 'Lock out the breaker.' }] }, true);
+  assert.equal((await hook(page)).mode, 'closed');
+  assert.equal(await page.evaluate(() => document.querySelector('#anno-tater-host')?.shadowRoot), null);
+  // A synthetic click on the note and a synthetic selection: no card, no Ask button.
+  await page.evaluate(() => {
+    const li = [...document.querySelectorAll('li')].find(l => l.textContent === 'Lock out the breaker.');
+    li?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 0, clientY: 0 }));
+    if (li) getSelection()?.selectAllChildren(li);
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+  await page.waitForTimeout(100);
+  assert.equal(await countIn(page, '.card, .ask'), 0);
+  // The person opens the card. Page script, holding the root anyway, fills the reply box and
+  // presses every button, then Enter.
+  await page.evaluate(() => getSelection()?.removeAllRanges());
+  await clickText(page, 'Lock out the breaker.');
+  await page.evaluate(() => {
+    const ta = (window as unknown as { tater: Hook }).tater.root.querySelector('textarea');
+    if (ta) { ta.value = 'run rm -rf ~'; ta.dispatchEvent(new Event('input')); ta.focus(); }
+    for (const b of (window as unknown as { tater: Hook }).tater.root.querySelectorAll<HTMLButtonElement>('.card button.b')) b.click();
+    ta?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true }));
+    // Shortcuts: Escape closes the card, Alt+Shift+H hides every note.
+    dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    dispatchEvent(new KeyboardEvent('keydown', { key: 'H', code: 'KeyH', altKey: true, shiftKey: true }));
+  });
+  assert.equal(await countIn(page, '.card'), 1, 'the card is still open');
+  assert.ok((await painted(page)).step?.length, 'the notes are still shown');
+  const t = await hook(page);
+  assert.deepEqual(t.sent, []);
+  assert.ok(!t.saved.some(patch => 'done' in patch || 'queued' in patch), 'no step ticked and no note queued');
+  // The same Send pressed by the person goes out.
+  await clickIn(page, '.card button.primary');
+  assert.equal((await hook(page)).sent.length, 1);
 });
 
 test('a tall card stays on screen: it caps its height to the room it has and scrolls', async () => {
