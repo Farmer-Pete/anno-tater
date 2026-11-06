@@ -1,4 +1,6 @@
 // Small DOM helpers. Nothing here uses innerHTML, so page CSP and Trusted Types don't matter.
+// Event handlers run only for events the person made: page script can call click() on our
+// buttons, but its events arrive with isTrusted false.
 
 type Child = Node | string | number | null | undefined | false | Child[];
 type Props = Record<string, string | number | boolean | null | undefined | EventListener>;
@@ -7,7 +9,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Props |
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(props ?? {})) {
     if (v == null || v === false) continue;
-    if (typeof v === 'function') e.addEventListener(k.slice(2), v);
+    if (typeof v === 'function') e.addEventListener(k.slice(2), ev => { if (ev.isTrusted) v(ev); });
     else if (k === 'style') e.style.cssText = String(v);
     else if (k === 'class') e.className = String(v);
     else e.setAttribute(k, v === true ? '' : String(v));

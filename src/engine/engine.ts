@@ -2,7 +2,8 @@
 //
 // - Text highlights use the CSS Custom Highlight API, which paints ranges without touching the
 //   DOM, so a page that re-renders its own nodes can't erase them.
-// - Everything else (cards, panel, pins, arrows) lives in one shadow root.
+// - Everything else (cards, panel, pins, arrows) lives in one closed shadow root, so page script
+//   can't read the notes, threads, or drafts, or reach the reply box.
 // - Highlights have no DOM, so hover and click find the note under the pointer themselves.
 import { autoUpdate, computePosition, flip, offset, shift, size, type VirtualElement } from '@floating-ui/dom';
 import { getBoxToBoxArrow } from 'perfect-arrows';
@@ -171,7 +172,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   const pageSheet = new CSSStyleSheet();
   pageSheet.replaceSync(PAGE_CSS);
   const host = h('div', { id: 'anno-tater-host', style: 'position:absolute;top:0;left:0;width:0;height:0;z-index:2147483646;' });
-  const shadow = host.attachShadow({ mode: 'open' });
+  const shadow = host.attachShadow({ mode: 'closed' });
   const uiSheet = new CSSStyleSheet();
   uiSheet.replaceSync(UI_CSS);
   shadow.adoptedStyleSheets = [uiSheet];
@@ -193,9 +194,10 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       if (e.key === 'Escape') { closeCard(); hideAsk(); }
       if (e.altKey && e.shiftKey && e.code === 'KeyH') { e.preventDefault(); setHidden(!hidden()); }
       // Enter sends, Shift+Enter adds a line. Handled here because stopImmediatePropagation below
-      // keeps the event from reaching the textarea.
-      const box = path[0];
-      if (inOurUi && e.key === 'Enter' && !e.shiftKey && !e.isComposing && box instanceof HTMLTextAreaElement && submitters.has(box)) {
+      // keeps the event from reaching the textarea. Seen from window, an event in a closed shadow
+      // root comes from the host, so the textarea is the root's focused element.
+      const box = shadow.activeElement;
+      if (inOurUi && e.isTrusted && e.key === 'Enter' && !e.shiftKey && !e.isComposing && box instanceof HTMLTextAreaElement && submitters.has(box)) {
         e.preventDefault();
         submitters.get(box)?.();
       }
@@ -383,7 +385,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   let askBtn: HTMLElement | null = null, askStop: (() => void) | null = null;
   function hideAsk(): void { askStop?.(); askStop = null; askBtn?.remove(); askBtn = null; }
   function onMouseUp(e: MouseEvent): void {
-    if (!data || !twoWay || hidden() || e.composedPath().includes(host)) return;
+    if (!e.isTrusted || !data || !twoWay || hidden() || e.composedPath().includes(host)) return;
     setTimeout(() => {
       const sel = document.getSelection();
       hideAsk();
@@ -453,7 +455,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     });
   }
   function onClick(e: MouseEvent): void {
-    if (!data || hidden() || e.composedPath().includes(host)) return;
+    if (!e.isTrusted || !data || hidden() || e.composedPath().includes(host)) return;
     if (!document.getSelection()?.isCollapsed) return;
     const hit = hitAt(e.clientX, e.clientY);
     if (hit?.p) {
