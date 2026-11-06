@@ -29,7 +29,7 @@ export function nodePath(path = process.env.PATH ?? ''): string {
 function programs(): { cli: string; host: string; flags: string } {
   const here = dirname(fileURLToPath(import.meta.url));
   if (import.meta.url.endsWith('.mjs')) {
-    mkdirSync(binDir(), { recursive: true, mode: 0o700 });
+    mkdirSync(binDir(), { recursive: true });
     for (const name of ['tater.mjs', 'host.mjs']) {
       if (join(here, name) !== join(binDir(), name)) copyFileSync(join(here, name), join(binDir(), name));
     }
@@ -51,6 +51,7 @@ export function install(browsers: Browser[]): string[] {
   const { cli, host, flags } = programs();
   writeLauncher(cliPath(), cli, flags);
   writeLauncher(hostPath(), host, flags);
+  chmodSync(binDir(), 0o700); // also tightens a bin folder an older install made
   const files = new Map(browsers.map(b => [manifestPath(b), b] as const));
   return [...files].map(([file, browser]) => {
     const manifest = {

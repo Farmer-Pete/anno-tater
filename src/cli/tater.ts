@@ -230,7 +230,8 @@ const { values, positionals } = parseArgs({
   options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, force: { type: 'boolean' }, posted: { type: 'string' }, 'github-review': { type: 'boolean' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
-migrate();
+// Commands that read or write page data bring the data folder up to date first.
+if (['push', 'open', 'watch', 'reply', 'ack', 'mark', 'export', 'status'].includes(command ?? '') && !values.help) migrate();
 const pages = [...new Set((values.page ?? []).map(pageKey))];
 
 switch (values.help ? 'help' : command) {

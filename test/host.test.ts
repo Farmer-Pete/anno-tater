@@ -510,16 +510,31 @@ test('tater moves an older data folder to the current layout', () => {
   mkdirSync(asked, { recursive: true });
   writeFileSync(join(withNotes, 'page.json'), JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], thread: [{ from: 'you', text: 'kept' }] }] }));
   writeFileSync(join(asked, 'inbox.jsonl'), `${JSON.stringify({ id: 'q1', at: '', page: 'example.org/q', url: 'https://example.org/q', kind: 'ask', noteId: null, quote: 'x', text: 'what?' })}\n`);
+  // A folder with only state can't say its page, and a stray file in another isn't the folder's.
+  const stateOnly = join(dir, 'data', layout1Name('example.org/s'));
+  mkdirSync(stateOnly);
+  writeFileSync(join(stateOnly, 'state.json'), '{"done":{}}');
+  writeFileSync(join(withNotes, 'state.json'), '{"done":{"n1":true}}');
   chmodSync(join(withNotes, 'page.json'), 0o644);
+  chmodSync(join(asked, 'inbox.jsonl'), 0o644);
   chmodSync(dir, 0o755);
   assert.match(tater(dir, 'status'), /page: https:\/\/example\.com\/page \(1 notes\)/);
   const folders = readdirSync(join(dir, 'data')).toSorted();
-  assert.ok(folders.every(f => /-[0-9a-f]{16}$/.test(f)), folders.join());
-  assert.equal(folders.length, 2);
+  assert.deepEqual(folders.filter(f => !/-[0-9a-f]{16}$/.test(f)), [layout1Name('example.org/s')]);
+  assert.equal(folders.length, 3);
+  const moved = (prefix: string) => join(dir, 'data', folders.find(f => f.startsWith(prefix) && /-[0-9a-f]{16}$/.test(f)) ?? '');
+  assert.deepEqual([moved('example.com'), join(moved('example.com'), 'state.json'), join(moved('example.org-q'), 'inbox.jsonl')].map(mode), ['700', '600', '600']);
   assert.match(tater(dir, 'watch', '--all', '--once'), /"id":"q1"/);
   assert.equal(tater(dir, 'reply', 'q1', 'an answer').trim(), 'added note q-q1');
   assert.deepEqual([mode(dir), mode(join(dir, 'data', folders.find(f => f.startsWith('example.com')) ?? '', 'page.json'))], ['700', '600']);
   assert.equal(readFileSync(join(dir, 'layout'), 'utf8').trim(), '2');
+  // An older helper or tater still running writes under the old name again: the next start moves
+  // it in, keeping messages the new folder lacks and the newer notes.
+  const stale = join(dir, 'data', layout1Name('example.org/q'));
+  mkdirSync(stale);
+  writeFileSync(join(stale, 'inbox.jsonl'), `${JSON.stringify({ id: 'q2', at: '', page: 'example.org/q', url: 'https://example.org/q', kind: 'ask', noteId: null, quote: 'y', text: 'and?' })}\n`);
+  assert.match(tater(dir, 'watch', '--all', '--once'), /"id":"q2"/);
+  assert.ok(!existsSync(stale));
 });
 
 test('the launcher names node by an absolute path, never from a relative PATH entry', () => {
