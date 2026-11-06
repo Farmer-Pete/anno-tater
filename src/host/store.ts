@@ -10,8 +10,8 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { MAX_QUOTE, MAX_TEXT, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
-import { mergeState, type PageState } from '../shared/protocol.ts';
+import { messageProblems, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
+import { mergeState, stateProblems, type PageState } from '../shared/protocol.ts';
 import { MAX_NOTES, MAX_PENDING, MAX_STATE } from './framing.ts';
 
 export const dataDir = () =>
@@ -89,18 +89,23 @@ export function readState(page: string): PageState {
   }
 }
 
-// Refuses a change that would take the state past its share of the browser's limit.
+// Refuses a change that isn't shaped like page state, or that would take the state past its share
+// of the browser's limit.
 export function saveState(page: string, patch: Partial<PageState>): void {
+  const problems = stateProblems(patch);
+  if (problems.length) throw new Error(`refused a state change for ${page}: ${problems.join('; ')}`);
   const { placement, ...next } = mergeState(readState(page), patch);
   if (bytes(next) > MAX_STATE) throw new Error(`the shared state for ${page} would be over ${MAX_STATE} bytes`);
   writeAtomic(stateFile(page), JSON.stringify(placement ? { ...next, placement } : next));
 }
 
 // ---------- messages ----------
-// Refuses a message over the size limits, or one that would take the page's unanswered messages
-// past their share of the browser's limit, which would leave the page without its notes.
+// Refuses a message that isn't shaped like one from a page (sizes included), or one that would
+// take the page's unanswered messages past their share of the browser's limit, which would leave
+// the page without its notes.
 export function appendInbox(message: Outgoing): void {
-  if ((message.text?.length ?? 0) > MAX_TEXT || (message.quote?.length ?? 0) > MAX_QUOTE) throw new Error(`message ${message.id} is over the size limit`);
+  const problems = messageProblems(message);
+  if (problems.length) throw new Error(`refused a message: ${problems.join('; ')}`);
   if (bytes([...pending(message.page), message]) > MAX_PENDING) {
     throw new Error(`${message.page} has too many unanswered messages; answer or ack them first`);
   }

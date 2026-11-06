@@ -4,6 +4,7 @@
 const KINDS = ['issue', 'caution', 'agree', 'info', 'step'] as const;
 export type Kind = (typeof KINDS)[number];
 const DECORATIONS = ['box', 'circle', 'underline', 'bracket'] as const;
+const MESSAGE_KINDS = ['reply', 'ask', 'done', 'undone'] as const;
 type Decoration = (typeof DECORATIONS)[number];
 
 interface Message {
@@ -74,7 +75,7 @@ export interface Outgoing {
   at: string;
   page: string; // the page key (pageKey of url)
   url: string; // the full address it was sent from
-  kind: 'reply' | 'ask' | 'done' | 'undone';
+  kind: (typeof MESSAGE_KINDS)[number];
   noteId: string | null;
   quote?: string;
   prefix?: string;
@@ -85,7 +86,7 @@ export interface Outgoing {
 // ---------- validation ----------
 
 type Problems = string[];
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+export const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown) => typeof v === 'string';
 const optStr = (v: unknown) => v === undefined || str(v);
 
@@ -145,6 +146,24 @@ export function validate(v: unknown): Problems {
   if (v.glossary !== undefined) problems.push(...glossaryProblems(v.glossary, 'glossary'));
   if (v.glossaryFiles !== undefined && !(Array.isArray(v.glossaryFiles) && v.glossaryFiles.every(str))) problems.push('glossaryFiles must be a list of file paths');
   if (v.acked !== undefined && !(Array.isArray(v.acked) && v.acked.every(str))) problems.push('acked must be a list of message ids');
+  return problems;
+}
+
+// Problems with a message from a page, which the helper checks before writing it to an inbox.
+export function messageProblems(m: unknown): Problems {
+  if (!isObj(m)) return ['a message must be an object'];
+  const problems: Problems = [];
+  if (!str(m.id) || !/^[\w-]{1,64}$/.test(m.id)) problems.push('id must be up to 64 letters, digits, - or _');
+  if (!str(m.at)) problems.push('at must be a string');
+  if (!str(m.url) || !originPattern(m.url)) problems.push('url must be an http(s) address');
+  else if (m.page !== pageKey(m.url)) problems.push('page must be the page key of url');
+  if (!MESSAGE_KINDS.includes(m.kind as Outgoing['kind'])) problems.push(`kind must be one of ${MESSAGE_KINDS.join(', ')}`);
+  if (m.kind === 'ask' ? m.noteId !== null : !(str(m.noteId) && m.noteId)) problems.push('noteId must name a note, or be null on an ask');
+  const texts = m.kind === 'done' || m.kind === 'undone' ? m.text === null : str(m.text) && m.text.length <= MAX_TEXT;
+  if (!texts) problems.push(`text must be null on a ticked step, and otherwise up to ${MAX_TEXT} characters`);
+  if (!optStr(m.quote) || String(m.quote ?? '').length > MAX_QUOTE) problems.push(`quote must be up to ${MAX_QUOTE} characters`);
+  if (m.kind === 'ask' && !(str(m.quote) && m.quote.trim())) problems.push('an ask needs the quote it asks about');
+  for (const k of ['prefix', 'suffix'] as const) if (!optStr(m[k]) || String(m[k] ?? '').length > 200) problems.push(`${k} must be up to 200 characters`);
   return problems;
 }
 

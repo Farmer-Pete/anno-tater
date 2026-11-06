@@ -126,8 +126,16 @@ test('the helper refuses messages that would make the page too big for the brows
   const message = (id: string, text: string): Outgoing => ({ id, at: '', page, url: notes.url, kind: 'reply', noteId: 'n1', text });
   try {
     await h.waitFor('hello');
+    // Shapes the page never sends: a message filed under another page, and state with a stray field.
+    h.send({ type: 'send', message: { ...message('elsewhere', 'hi'), page: 'example.com/other' } });
+    assert.match(JSON.stringify(await h.waitFor('error')), /page key of url/);
+    h.send({ type: 'state', page, state: { owner: 'page script' } });
+    assert.match(JSON.stringify(await h.waitFor('error')), /unknown field owner/);
+    // An error that quotes something huge is cut short, so the helper can still send it.
+    h.child.stdin.write(frame(JSON.stringify({ type: 'state', page, state: { ['x'.repeat(MAX_TO_BROWSER)]: true } })));
+    assert.ok(JSON.stringify(await h.waitFor('error')).length < 2000);
     h.send({ type: 'send', message: message('long', 'x'.repeat(MAX_TEXT + 1)) });
-    assert.match(JSON.stringify(await h.waitFor('error')), /over the size limit/);
+    assert.match(JSON.stringify(await h.waitFor('error')), /up to 10000 characters/);
     // Unanswered messages up to their share of the limit, counted in UTF-8 bytes (each é is two);
     // the next one is refused.
     const each = 'é'.repeat(MAX_TEXT);

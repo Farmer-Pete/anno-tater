@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { anchorsKey, decodeFragment, encodeFragment, findQuote, isPageNote, norm, originPattern, pageKey, parseNotes, validate, whereText, type NotesFile } from '../src/shared/notes.ts';
+import { anchorsKey, decodeFragment, encodeFragment, findQuote, isPageNote, messageProblems, norm, originPattern, pageKey, parseNotes, validate, whereText, type NotesFile } from '../src/shared/notes.ts';
+import { stateProblems } from '../src/shared/protocol.ts';
 
 const sample: NotesFile = {
   url: 'https://example.com/docs/page',
@@ -129,4 +130,33 @@ test('a range runs from a quote to an endQuote, or from a diff line to an endLin
   assert.deepEqual(validate(withNote({ anchor: { file: 'a.py', line: 9, endLine: 8 } })),
     ['notes[0].anchor.endLine must be a line number from line on, on a note without a quote']);
   assert.equal(whereText({ id: 'n', kind: 'info', anchor: { file: 'a.py', line: 548, endLine: 565 } }), 'a.py:548-565');
+});
+
+test('a message from a page must be shaped like one, and its page must match its address', () => {
+  const ok = { id: 'm1', at: '', url: 'https://example.com/a#x', page: 'example.com/a', kind: 'reply', noteId: 'n1', text: 'hi' };
+  assert.deepEqual(messageProblems(ok), []);
+  assert.deepEqual(messageProblems({ ...ok, kind: 'ask', noteId: null, quote: 'some text' }), []);
+  assert.deepEqual(messageProblems({ ...ok, kind: 'done', text: null }), []);
+  const bad = (patch: Record<string, unknown>) => messageProblems({ ...ok, ...patch });
+  assert.match(bad({ page: 'example.com/b' }).join(), /page key of url/);
+  assert.match(bad({ url: 'javascript:alert(1)' }).join(), /http\(s\) address/);
+  assert.match(bad({ id: '../../x' }).join(), /id must be/);
+  assert.match(bad({ kind: 'delete' }).join(), /kind must be/);
+  assert.match(bad({ noteId: null }).join(), /noteId/);
+  assert.match(bad({ kind: 'ask', noteId: null }).join(), /needs the quote/);
+  assert.match(bad({ text: 7 }).join(), /text must be/);
+  assert.match(bad({ suffix: 'x'.repeat(201) }).join(), /suffix/);
+  assert.deepEqual(messageProblems(null), ['a message must be an object']);
+});
+
+test('a state change must be shaped like page state', () => {
+  assert.deepEqual(stateProblems({ done: { n1: true }, seen: ['n1#0'], queued: { n2: false } }), []);
+  assert.match(stateProblems({ done: { n1: 'yes' } }).join(), /done and queued/);
+  assert.match(stateProblems({ seen: 'n1#0' }).join(), /seen/);
+  assert.match(stateProblems({ owner: 'me' }).join(), /unknown field owner/);
+  assert.match(stateProblems({ placement: { placed: 'all' } }).join(), /placement/);
+  const placement = { at: '', notes: '', placed: 1, onPage: 0, unplaced: [{ id: 'n1', quote: 'q' }], ambiguous: [{ id: 'n2', quote: 'r', matches: 2 }] };
+  assert.deepEqual(stateProblems({ placement }), []);
+  assert.match(stateProblems({ placement: { ...placement, unplaced: [null] } }).join(), /placement/);
+  assert.match(stateProblems({ placement: { ...placement, ambiguous: [{ id: 'n2', quote: 'r' }] } }).join(), /placement/);
 });

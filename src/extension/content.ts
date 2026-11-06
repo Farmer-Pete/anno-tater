@@ -22,14 +22,19 @@ if (!g[FLAG]) {
   let port: chrome.runtime.Port | null = null;
   const post = (m: FromPage) => port?.postMessage(m);
 
+  // The page key the background is looking up for us, and the page whose notes the engine shows.
+  // Single-page apps change the address without a reload; a message belongs to the notes it was
+  // written on, even when the address moved since.
+  let current = '', currentUrl = '';
+  let shown = { page: '', url: '' };
+
   // Messages go to the page's inbox; shared state (ticked steps, read replies) to the helper.
   const engine = createEngine(store, draft => {
     const message: Outgoing = {
       ...draft,
       id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
       at: new Date().toISOString(),
-      page: pageKey(location.href),
-      url: location.href,
+      ...shown,
     };
     post({ type: 'send', message });
     return message;
@@ -42,14 +47,13 @@ if (!g[FLAG]) {
     else engine.start();
   };
 
-  // The page key the background is looking up for us. Single-page apps change it without a reload.
-  let current = '';
-  const hello = () => { current = pageKey(location.href); post({ type: 'hello', url: location.href }); };
+  const hello = () => { currentUrl = location.href; current = pageKey(currentUrl); post({ type: 'hello', url: currentUrl }); };
 
   function onMessage(raw: unknown): void {
     const m = raw as ToPage;
     if (m.type === 'page') {
       if (m.page !== current) return; // an answer for the route we just left
+      shown = { page: current, url: currentUrl };
       notes = m.notes;
       engine.load(notes, { twoWay: m.twoWay, state: m.state, pending: m.pending });
       engine.setDelivered(m.delivered);
