@@ -81,8 +81,12 @@ function askHelper(page: string): Promise<PageReply | null> {
 }
 
 // ---------- pages ----------
-const pages = new Map<Port, { url: string; page: string; rev: number; count: number | null; tabId: number | undefined }>();
-const activated = new Set<number>(); // tabs where the person asked to talk about a page with no notes
+const sameOrigin = (url: string, sender: string | undefined) => {
+  try { return sender !== undefined && originPattern(url) !== null && new URL(url).origin === new URL(sender).origin; } catch { return false; }
+};
+// page: the page the content script is on; shown: the page whose notes it was last sent.
+const pages = new Map<Port, { url: string; page: string; shown: string; rev: number; count: number | null; tabId: number | undefined }>();
+const activated = new Map<number, string>(); // tabs where the person asked to talk about a page with no notes, and that page
 const focusing = new Map<number, { page: string; note: string }>(); // tabs opened from a link, and the note to show
 const broadcast = (m: ToPage) => { for (const port of pages.keys()) port.postMessage(m); };
 
@@ -98,10 +102,13 @@ async function refresh(port: Port): Promise<void> {
   const failed = !fromHelper && helper !== null;
   let notes = fromHelper ? fromHelper.notes : failed ? null : (await localPages())[page] ?? null;
   const state = fromHelper?.state ?? (failed ? { done: {} } : await localState(page));
+  // Asking about a page holds for that page only: the tab moving on ends it.
+  if (info.tabId !== undefined && activated.has(info.tabId) && activated.get(info.tabId) !== page) activated.delete(info.tabId);
   if (!notes && info.tabId !== undefined && activated.has(info.tabId)) notes = { url, notes: [] };
   if (info.page === page) info.count = notes ? notes.notes.length : null;
   const message: ToPage = { type: 'page', page, notes, state, pending: fromHelper?.pending ?? [], twoWay: helperState === 'connected', delivered: [...delivered] };
   try { port.postMessage(message); } catch { pages.delete(port); return; }
+  info.shown = page;
   const focus = info.tabId === undefined ? undefined : focusing.get(info.tabId);
   if (focus?.page === page && info.tabId !== undefined) {
     focusing.delete(info.tabId);
@@ -112,21 +119,29 @@ async function refresh(port: Port): Promise<void> {
 ext.runtime.onConnect.addListener(port => {
   if (port.name !== 'page') return;
   connectHelper(); // installed since the browser started? pick it up without a restart
-  pages.set(port, { url: '', page: '', rev: 0, count: null, tabId: port.sender?.tab?.id });
+  pages.set(port, { url: '', page: '', shown: '', rev: 0, count: null, tabId: port.sender?.tab?.id });
   port.onDisconnect.addListener(() => pages.delete(port));
   port.onMessage.addListener(raw => {
     const m = raw as FromPage;
     const info = pages.get(port);
     if (!info) return;
-    if (m.type === 'hello') { info.url = m.url; info.page = pageKey(m.url); void refresh(port); }
-    else if (m.type === 'send') helper?.postMessage({ type: 'send', message: m.message });
+    // The content script says which route it's on, since a single-page app moves without
+    // reconnecting, but only the browser can say which site: a hello for another origin is ignored.
+    if (m.type === 'hello') {
+      if (!sameOrigin(m.url, port.sender?.url)) return;
+      info.url = m.url; info.page = pageKey(m.url); void refresh(port);
+    }
+    // Messages and state changes count only for the page whose notes the content script was sent.
+    else if (m.type === 'send') { if (m.message.page === info.shown) helper?.postMessage({ type: 'send', message: m.message }); }
     else if (m.type === 'open') {
+      if (!originPattern(m.url)) return; // web pages only
       void ext.tabs.create({ url: m.url, openerTabId: info.tabId }).then(tab => {
         if (tab.id !== undefined) focusing.set(tab.id, { page: pageKey(m.url), note: m.note });
       });
     }
-    else if (helper) helper.postMessage({ type: 'state', page: info.page, state: m.state });
-    else void saveLocalState(info.page, m.state);
+    else if (!info.shown) return;
+    else if (helper) helper.postMessage({ type: 'state', page: info.shown, state: m.state });
+    else void saveLocalState(info.shown, m.state);
   });
 });
 
@@ -179,7 +194,9 @@ ext.permissions.onAdded.addListener(p => { void syncContentScripts().then(() => 
 ext.permissions.onRemoved.addListener(() => { void syncContentScripts().then(updateBadge); });
 
 // ---------- popup and intake page ----------
-ext.runtime.onMessage.addListener((raw, _sender, reply) => {
+ext.runtime.onMessage.addListener((raw, sender, reply) => {
+  // Only the extension's own pages ask here; content scripts talk over their port.
+  if (sender.id !== ext.runtime.id || !sender.url?.startsWith(ext.runtime.getURL(''))) return false;
   const m = raw as Request;
   if (m.type === 'popup') {
     connectHelper();
@@ -193,8 +210,10 @@ ext.runtime.onMessage.addListener((raw, _sender, reply) => {
     return true; // reply is async
   }
   if (m.type === 'activate') {
-    activated.add(m.tabId);
-    void ext.scripting.executeScript({ target: { tabId: m.tabId }, files: ['content.js'] }).then(() => {
+    void ext.tabs.get(m.tabId).then(tab => {
+      activated.set(m.tabId, pageKey(tab.url ?? ''));
+      return ext.scripting.executeScript({ target: { tabId: m.tabId }, files: ['content.js'] });
+    }).then(() => {
       for (const [port, info] of pages) if (info.tabId === m.tabId) void refresh(port);
     });
   } else if (m.type === 'toggle-hidden') {
