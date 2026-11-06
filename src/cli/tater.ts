@@ -63,8 +63,9 @@ const findMessage = (id: string) => readAllInboxes().find(m => m.id === id) ?? f
 const session = process.env.CLAUDE_CODE_SESSION_ID || undefined;
 const short = (id: string) => id.slice(0, 8);
 
-// The page's notes. A question asked on a page without notes starts a notes file there.
-const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: m.url, notes: [], session };
+// The page's notes. A question asked on a page without notes starts a notes file there, at the
+// page's address without the #fragment, which the page's link could fill with text of its own.
+const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: `${/^[a-z]+:\/\//i.exec(m.url)?.[0] ?? 'https://'}${m.page}`, notes: [], session };
 
 // Saves a page's notes, or stops with the reason they can't be saved (too big for the browser).
 const save = (notes: NotesFile) => { try { return savePage(notes); } catch (e) { return fail((e as Error).message); } };
@@ -125,8 +126,11 @@ function watchInbox(pages: string[] | null, once: boolean, skip: Set<string>): v
     const fresh = all.filter(m => !skip.has(m.kind));
     for (const m of fresh) {
       printed.add(m.id);
-      const { id, kind, noteId, quote, prefix, suffix, text, url } = m;
-      console.log(JSON.stringify({ id, kind, noteId, url, quote, prefix, suffix, text }));
+      // pageText is the page's own text, which its author controls; text is what the person typed.
+      // The page key, not the address, since a crafted #fragment could carry text of its own.
+      const { id, kind, noteId, page, quote, prefix, suffix, text } = m;
+      const pageText = quote === undefined ? undefined : { quote, prefix, suffix };
+      console.log(JSON.stringify({ id, kind, noteId, page, text, pageText }));
     }
     markDelivered(fresh.map(m => m.id));
   };

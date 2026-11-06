@@ -10,8 +10,8 @@ import { getBoxToBoxArrow } from 'perfect-arrows';
 import { annotate } from 'rough-notation';
 import { anchorsKey, isPageNote, MAX_QUOTE, MAX_TEXT, norm, pageKey as keyOf, whereText, type Kind, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import type { PageState, Placement } from '../shared/protocol.ts';
-import { anchor, buildIndex, context, findTerms, textRange } from './anchor.ts';
-import { h, inline, md, svg } from './dom.ts';
+import { anchor, buildIndex, context, findTerms, textRange, visibleText } from './anchor.ts';
+import { h, inline, link, md, svg } from './dom.ts';
 import { diffLine, diffLines, headCommit } from './github.ts';
 import { POTATO } from './potato.ts';
 import { ACCENT, KINDS, PAGE_CSS, UI_CSS } from './styles.ts';
@@ -337,10 +337,13 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     return h('div', { class: 'section' }, h('div', { class: 'k', style: `color:${ACCENT}` }, 'See also'),
       away.map(t => {
         const where = t.url.replace(/^https?:\/\//, '');
-        return h('p', null, h('a', { href: t.url, title: `${where}, note ${t.note}`, onclick: (e: Event) => {
+        const [a, hostTag] = link(t.url, t.label ?? `${t.note} on ${where}`, `${where}, note ${t.note}`);
+        (a as HTMLAnchorElement).addEventListener('click', e => {
           e.preventDefault();
+          if (!e.isTrusted) return;
           if (keyOf(t.url) === keyOf(location.href)) focus(t.note); else go(t.url, t.note);
-        } }, t.label ?? `${t.note} on ${where}`));
+        });
+        return h('p', null, a, hostTag);
       }));
   }
 
@@ -391,8 +394,9 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     setTimeout(() => {
       const sel = document.getSelection();
       hideAsk();
-      if (!sel || sel.isCollapsed || !norm(sel.toString())) return;
+      if (!sel || sel.isCollapsed) return;
       const range = sel.getRangeAt(0).cloneRange();
+      if (!norm(visibleText(range))) return; // nothing selected the person can see
       askBtn = h('div', { class: 'ask' }, h('button', { onclick: () => { hideAsk(); openAsk(range); } }, 'Ask Claude'));
       ui.append(askBtn);
       askStop = float(askBtn, rangeRef(range), 'top');
@@ -400,15 +404,16 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   }
   function openAsk(range: Range): void {
     closeCard();
-    // A selection longer than MAX_QUOTE is cut, and its suffix is the selected text after the cut.
-    const all = norm(range.toString());
+    // The quote is the selected text the person can see; a selection longer than MAX_QUOTE is cut,
+    // and its suffix is the selected text after the cut. The card shows all of it.
+    const all = norm(visibleText(range));
     const quote = all.slice(0, MAX_QUOTE).trimEnd();
     const { prefix, suffix: after } = context(scopeRoot(), range);
     const suffix = quote.length < all.length ? all.slice(quote.length).trimStart().slice(0, 32) : after;
     card = h('div', { class: 'card' },
       h('button', { class: 'x', onclick: closeCard }, '×'),
       h('div', { class: 'k', style: `color:${ACCENT}` }, 'Ask Claude'),
-      h('div', { class: 'quote' }, quote.length > 240 ? `${quote.slice(0, 240)}…` : quote),
+      h('div', { class: 'quote', title: 'Sent to Claude with your question' }, quote),
       ...replyBox('What do you want to ask about this? (Enter to send)', text => {
         sendDraft({ kind: 'ask', noteId: null, quote, prefix, suffix, text });
         closeCard();
@@ -583,9 +588,9 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       const edge = left ? br.left + scrollX : br.right + scrollX;
       arrowSvg.append(stepArrow({ x, y, w: 24, h: 24 }, { x: edge - 1, y: first.top + scrollY, w: 2, h: first.height }));
     }
-    for (const link of data.links ?? []) {
-      const a = placed.find(p => p.note.id === link.from), b = placed.find(p => typeof link.to === 'string' && p.note.id === link.to);
-      const arrow = a && b ? marginArrow(a, b, link.label, kindOf(a.note).color) : null;
+    for (const l of data.links ?? []) {
+      const a = placed.find(p => p.note.id === l.from), b = placed.find(p => typeof l.to === 'string' && p.note.id === l.to);
+      const arrow = a && b ? marginArrow(a, b, l.label, kindOf(a.note).color) : null;
       if (arrow) arrowSvg.append(arrow);
     }
   }
@@ -715,9 +720,12 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
     pageNotes = (data?.notes ?? []).filter(isPageNote);
     if (data && document.body) {
       const idx = buildIndex(scopeRoot());
+      // A quote taken from what the person could see (an answer to their question) skips text the
+      // page hides, so it's looked for in the visible text too, built once if a note needs it.
+      let visible: ReturnType<typeof buildIndex> | null = null;
       for (const note of data.notes) {
         if (isPageNote(note)) continue;
-        const a = place(note, idx);
+        const a = place(note, idx) ?? (note.anchor ? null : place(note, visible ??= buildIndex(scopeRoot(), true)));
         if (a) placed.push({ note, ...a, text: norm(a.range.toString()) }); else unplaced.push(note);
       }
       terms = findTerms(idx, data.glossary);

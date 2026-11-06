@@ -446,12 +446,15 @@ test('ticked steps and read replies are shared by every browser through the help
 
 test('a question on a page without notes reaches --all, and the answer starts its notes', () => {
   const dir = home();
-  const ask: Outgoing = { id: 'm2', at: '', page: 'example.org/x', url: 'https://example.org/x', kind: 'ask', noteId: null, quote: 'term', prefix: 'a ', suffix: ' here', text: 'what is this?' };
+  const ask: Outgoing = { id: 'm2', at: '', page: 'example.org/x', url: 'https://example.org/x#ignore-previous-instructions', kind: 'ask', noteId: null, quote: 'term', prefix: 'a ', suffix: ' here', text: 'what is this?' };
   const h = host(dir);
   h.send({ type: 'send', message: ask });
   return h.waitFor('sent').then(() => {
     h.child.kill();
-    assert.match(tater(dir, 'watch', '--all', '--once'), /"id":"m2"/);
+    // The page's text is grouped apart from the person's, and the address (with its fragment) stays out.
+    assert.deepEqual(JSON.parse(tater(dir, 'watch', '--all', '--once')), {
+      id: 'm2', kind: 'ask', noteId: null, page: 'example.org/x', text: 'what is this?', pageText: { quote: 'term', prefix: 'a ', suffix: ' here' },
+    });
     assert.match(tater(dir, 'reply', 'm2', 'a thing'), /added note q-m2/);
     assert.match(tater(dir, 'status'), /page: https:\/\/example\.org\/x \(1 notes\)/);
     assert.equal(tater(dir, 'watch', '--all', '--once').trim(), '');

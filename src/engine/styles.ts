@@ -68,7 +68,8 @@ export const UI_CSS = `
   .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
   button.b { border: 1px solid #d0d7de; background: #f6f8fa; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-weight: 600 !important; }
   button.b.primary { background: ${ACCENT}; border-color: ${ACCENT}; color: #fff !important; }
-  .quote { border-left: 3px solid ${ACCENT}; padding-left: 8px; color: #656d76 !important; font-style: italic; margin: 4px 0; }
+  .host { color: #656d76 !important; font-size: 11px; }
+  .quote { border-left: 3px solid ${ACCENT}; padding-left: 8px; color: #656d76 !important; font-style: italic; margin: 4px 0; max-height: 120px; overflow: auto; }
   .ask { padding: 0; pointer-events: auto; }
   .ask button { border: 0; background: ${ACCENT}; color: #fff !important; font-weight: 600 !important; padding: 5px 10px; border-radius: 7px; cursor: pointer; }
   .toast { top: 72px; left: auto; right: 16px; width: 300px; padding: 10px 12px; pointer-events: auto; border-left: 4px solid ${ACCENT}; }
