@@ -3,13 +3,15 @@
 import { mkdirSync, watch } from 'node:fs';
 import { pageKey } from '../shared/notes.ts';
 import type { FromHost, PageSummary, ToHost } from '../shared/protocol.ts';
-import { decoder, encode } from './framing.ts';
+import { decoder, encode, MAX_TO_BROWSER } from './framing.ts';
 import { appendInbox, dataDir, findPage, loadPages, pageRev, pending, readDelivered, readState, saveState } from './store.ts';
 
 const send = (message: FromHost) => process.stdout.write(encode(message));
 // An error the browser can always take: its text cut short, since it can quote what the page sent.
+// The page it names stays whole (any page key the browser sent fits in half its limit), so the
+// extension knows which request failed.
 const sendError = (text: string, page?: string) =>
-  send({ type: 'error', message: text.slice(0, 1000), ...(page !== undefined && page.length <= 2000 ? { page } : {}) });
+  send({ type: 'error', message: text.slice(0, 1000), ...(page !== undefined && page.length <= MAX_TO_BROWSER / 2 ? { page } : {}) });
 const log = (...args: unknown[]) => console.error('[anno-tater host]', ...args);
 
 const pages = (): PageSummary[] => loadPages((file, problem) => log(`skipping ${file}: ${problem}`)).map(n => {
