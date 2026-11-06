@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { decoder, encode, MAX_NOTES, MAX_PENDING, MAX_TO_BROWSER } from '../src/host/framing.ts';
+import { decoder, encode, MAX_NOTES, MAX_PENDING, MAX_STATE, MAX_TO_BROWSER } from '../src/host/framing.ts';
 import { anchorsKey, MAX_TEXT, pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
 import type { FromHost } from '../src/shared/protocol.ts';
 
@@ -138,6 +138,9 @@ test('the helper refuses messages that would make the page too big for the brows
     h.send({ type: 'send', message: message('one-too-many', each) });
     assert.match(JSON.stringify(await h.waitFor('error')), /too many unanswered messages/);
     assert.ok(encode(await h.get()).length < MAX_TO_BROWSER, 'the page still fits');
+    // Shared state past its share is refused too.
+    h.send({ type: 'state', page, state: { seen: Array.from({ length: MAX_STATE / 8 }, (_, i) => `n1#${i}`) } });
+    assert.match(JSON.stringify(await h.waitFor('error')), /shared state/);
     // A notes file too big for the browser: the error names the page.
     writeFileSync(join(dir, 'data', readdirSync(join(dir, 'data'))[0] ?? '', 'page.json'), JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], body: 'z'.repeat(MAX_TO_BROWSER) }] }));
     h.send({ type: 'get', page });
@@ -145,9 +148,9 @@ test('the helper refuses messages that would make the page too big for the brows
     assert.equal(error.type === 'error' && error.page, page);
     // Frames the browser never sends: the helper drops them and keeps going.
     h.child.stdin.write(frame('nope'));
-    assert.match(JSON.stringify(await h.waitFor('error')), /isn't JSON/);
+    assert.match(JSON.stringify(await h.waitFor('error')), /isn't a JSON object: Unexpected/);
     h.child.stdin.write(frame('null'));
-    assert.match(JSON.stringify(await h.waitFor('error')), /not an object/);
+    assert.match(JSON.stringify(await h.waitFor('error')), /isn't a JSON object: not an object/);
     writeFileSync(join(dir, 'data', readdirSync(join(dir, 'data'))[0] ?? '', 'page.json'), JSON.stringify(notes));
     assert.equal((await h.get())?.notes?.notes[0]?.id, 'n1');
   } finally {

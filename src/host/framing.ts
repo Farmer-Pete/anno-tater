@@ -3,12 +3,13 @@
 
 // Chrome refuses messages from the host larger than 1 MB. A page's reply carries its notes, its
 // shared state, and its unanswered messages, so each gets a share, in UTF-8 bytes of compact
-// JSON: tater refuses to save larger notes, and the helper refuses a message that would take the
-// unanswered ones past theirs. The state left out of the reply (the placement report) is what
-// could grow with the notes; the rest is a few bytes per note.
+// JSON: tater refuses to save larger notes, and the helper refuses a message or a state change
+// that would take the unanswered messages or the shared state past theirs. The placement report
+// stays out of the reply (only tater status reads it), so it doesn't count.
 export const MAX_TO_BROWSER = 1024 * 1024;
 export const MAX_NOTES = MAX_TO_BROWSER / 2;
 export const MAX_PENDING = MAX_TO_BROWSER / 4;
+export const MAX_STATE = MAX_TO_BROWSER / 8;
 
 export function encode(message: unknown): Buffer {
   const body = Buffer.from(JSON.stringify(message), 'utf8');

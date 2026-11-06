@@ -53,7 +53,7 @@ const onChange = debounced(() => {
 mkdirSync(dataDir(), { recursive: true });
 watch(dataDir(), { recursive: true }, (_event, file) => { if (!String(file).startsWith('bin')) onChange(); });
 
-process.stdin.on('data', decoder(handle, e => send({ type: 'error', message: `dropped a message that isn't JSON: ${e.message}` })));
+process.stdin.on('data', decoder(handle, e => send({ type: 'error', message: `dropped a message that isn't a JSON object: ${e.message}` })));
 process.stdin.on('end', () => process.exit(0));
 send({ type: 'hello', pages: pages(), delivered: [...lastDelivered].slice(-500) });
 log(`started for ${process.argv.slice(2).join(' ')}; data in ${dataDir()}`);

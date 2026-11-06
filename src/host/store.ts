@@ -12,7 +12,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { MAX_QUOTE, MAX_TEXT, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
 import { mergeState, type PageState } from '../shared/protocol.ts';
-import { MAX_NOTES, MAX_PENDING } from './framing.ts';
+import { MAX_NOTES, MAX_PENDING, MAX_STATE } from './framing.ts';
 
 export const dataDir = () =>
   process.env.ANNO_TATER_HOME ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'anno-tater');
@@ -89,9 +89,11 @@ export function readState(page: string): PageState {
   }
 }
 
+// Refuses a change that would take the state past its share of the browser's limit.
 export function saveState(page: string, patch: Partial<PageState>): void {
-  const now = readState(page);
-  writeAtomic(stateFile(page), JSON.stringify(mergeState(now, patch)));
+  const { placement, ...next } = mergeState(readState(page), patch);
+  if (bytes(next) > MAX_STATE) throw new Error(`the shared state for ${page} would be over ${MAX_STATE} bytes`);
+  writeAtomic(stateFile(page), JSON.stringify(placement ? { ...next, placement } : next));
 }
 
 // ---------- messages ----------
