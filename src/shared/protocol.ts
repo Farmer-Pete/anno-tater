@@ -30,6 +30,14 @@ export const mergeState = (now: PageState, patch: Partial<PageState>): PageState
   ...(now.queued || patch.queued ? { queued: { ...now.queued, ...patch.queued } } : {}),
 });
 
+// One unplaced or ambiguous note in a placement report.
+const isHit = (h: unknown, matches: boolean) => isObj(h) && typeof h.id === 'string' && typeof h.quote === 'string' && (!matches || typeof h.matches === 'number');
+const isPlacement = (p: unknown): boolean => {
+  return isObj(p) && typeof p.at === 'string' && typeof p.notes === 'string' && typeof p.placed === 'number' && typeof p.onPage === 'number'
+    && Array.isArray(p.unplaced) && p.unplaced.every(h => isHit(h, false)) && Array.isArray(p.ambiguous) && p.ambiguous.every(h => isHit(h, true))
+    && (p.commit === undefined || typeof p.commit === 'string') && (p.scopeProblem === undefined || p.scopeProblem === 'invalid' || p.scopeProblem === 'no match');
+};
+
 // Problems with a change to a page's state, which the helper checks before saving it.
 const flags = (v: unknown) => v === undefined || (isObj(v) && Object.values(v).every(b => typeof b === 'boolean'));
 export function stateProblems(patch: unknown): string[] {
@@ -37,8 +45,7 @@ export function stateProblems(patch: unknown): string[] {
   const problems = Object.keys(patch).filter(k => !['done', 'seen', 'queued', 'placement'].includes(k)).map(k => `state has an unknown field ${k}`);
   if (!flags(patch.done) || !flags(patch.queued)) problems.push('done and queued must map note ids to true or false');
   if (patch.seen !== undefined && !(Array.isArray(patch.seen) && patch.seen.every(s => typeof s === 'string'))) problems.push('seen must be a list of strings');
-  const p = patch.placement;
-  if (p !== undefined && !(isObj(p) && typeof p.placed === 'number' && Array.isArray(p.unplaced) && Array.isArray(p.ambiguous))) problems.push('placement must be a placement report');
+  if (patch.placement !== undefined && !isPlacement(patch.placement)) problems.push('placement must be a placement report');
   return problems;
 }
 

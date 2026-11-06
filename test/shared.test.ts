@@ -155,4 +155,8 @@ test('a state change must be shaped like page state', () => {
   assert.match(stateProblems({ seen: 'n1#0' }).join(), /seen/);
   assert.match(stateProblems({ owner: 'me' }).join(), /unknown field owner/);
   assert.match(stateProblems({ placement: { placed: 'all' } }).join(), /placement/);
+  const placement = { at: '', notes: '', placed: 1, onPage: 0, unplaced: [{ id: 'n1', quote: 'q' }], ambiguous: [{ id: 'n2', quote: 'r', matches: 2 }] };
+  assert.deepEqual(stateProblems({ placement }), []);
+  assert.match(stateProblems({ placement: { ...placement, unplaced: [null] } }).join(), /placement/);
+  assert.match(stateProblems({ placement: { ...placement, ambiguous: [{ id: 'n2', quote: 'r' }] } }).join(), /placement/);
 });

@@ -102,10 +102,12 @@ async function refresh(port: Port): Promise<void> {
   const failed = !fromHelper && helper !== null;
   let notes = fromHelper ? fromHelper.notes : failed ? null : (await localPages())[page] ?? null;
   const state = fromHelper?.state ?? (failed ? { done: {} } : await localState(page));
+  // The page moved on while we waited: the newer refresh answers it.
+  if (info.page !== page) return;
   // Asking about a page holds for that page only: the tab moving on ends it.
   if (info.tabId !== undefined && activated.has(info.tabId) && activated.get(info.tabId) !== page) activated.delete(info.tabId);
   if (!notes && info.tabId !== undefined && activated.has(info.tabId)) notes = { url, notes: [] };
-  if (info.page === page) info.count = notes ? notes.notes.length : null;
+  info.count = notes ? notes.notes.length : null;
   const message: ToPage = { type: 'page', page, notes, state, pending: fromHelper?.pending ?? [], twoWay: helperState === 'connected', delivered: [...delivered] };
   try { port.postMessage(message); } catch { pages.delete(port); return; }
   info.shown = page;
@@ -131,17 +133,18 @@ ext.runtime.onConnect.addListener(port => {
       if (!sameOrigin(m.url, port.sender?.url)) return;
       info.url = m.url; info.page = pageKey(m.url); void refresh(port);
     }
-    // Messages and state changes count only for the page whose notes the content script was sent.
-    else if (m.type === 'send') { if (m.message.page === info.shown) helper?.postMessage({ type: 'send', message: m.message }); }
+    // Messages and state changes count only for the page whose notes the content script was sent,
+    // or, on a port that reconnected and hasn't been sent them yet, the page it said hello from.
+    else if (m.type === 'send') { if (m.message.page === (info.shown || info.page)) helper?.postMessage({ type: 'send', message: m.message }); }
     else if (m.type === 'open') {
       if (!originPattern(m.url)) return; // web pages only
       void ext.tabs.create({ url: m.url, openerTabId: info.tabId }).then(tab => {
         if (tab.id !== undefined) focusing.set(tab.id, { page: pageKey(m.url), note: m.note });
       });
     }
-    else if (!info.shown) return;
-    else if (helper) helper.postMessage({ type: 'state', page: info.shown, state: m.state });
-    else void saveLocalState(info.shown, m.state);
+    else if (!(info.shown || info.page)) return;
+    else if (helper) helper.postMessage({ type: 'state', page: info.shown || info.page, state: m.state });
+    else void saveLocalState(info.shown || info.page, m.state);
   });
 });
 
