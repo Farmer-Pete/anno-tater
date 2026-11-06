@@ -19,7 +19,10 @@ function handle(raw: unknown): void {
   try {
     if (message.type === 'get') {
       const { page } = message;
-      send({ type: 'page', page, notes: findPage(page), state: readState(page), pending: pending(page) });
+      // The page never reads its placement report (it's for tater status), and the report repeats
+      // the quotes that didn't place, so it stays out of the reply.
+      const { placement: _, ...state } = readState(page);
+      send({ type: 'page', page, notes: findPage(page), state, pending: pending(page) });
     } else if (message.type === 'send') {
       appendInbox(message.message);
       send({ type: 'sent', id: message.message.id });

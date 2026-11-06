@@ -63,8 +63,8 @@ export interface NotesFile {
   session?: string; // the agent session that last pushed these notes (managed by tater)
 }
 
-// Limits on what the page sends: a message's text, and the selected text a question is about.
-// A longer selection is cut to its start, which is still text on the page, so it still anchors.
+// Limits on what the page sends: a message's text, and the quote it's about. A longer quote is cut
+// to its start, which is still text on the page, so it still anchors.
 export const MAX_TEXT = 10_000;
 export const MAX_QUOTE = 1000;
 

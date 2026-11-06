@@ -5,7 +5,6 @@ import { dirname, resolve } from 'node:path';
 import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, validate, whereText, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
-import { MAX_NOTES } from '../host/framing.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
 import { dataDir, findPage, loadPages, markDelivered, pageDir, pagesDir, pending, readAllInboxes, readDelivered, readState, savePage } from '../host/store.ts';
 
@@ -67,9 +66,12 @@ const short = (id: string) => id.slice(0, 8);
 // The page's notes. A question asked on a page without notes starts a notes file there.
 const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: m.url, notes: [], session };
 
+// Saves a page's notes, or stops with the reason they can't be saved (too big for the browser).
+const save = (notes: NotesFile) => { try { return savePage(notes); } catch (e) { return fail((e as Error).message); } };
+
 function saveWithAck(page: NotesFile, ids: string[]): void {
   page.acked = [...new Set([...(page.acked ?? []), ...ids])];
-  savePage(page);
+  save(page);
 }
 
 async function readText(arg: string | undefined): Promise<string> {
@@ -203,8 +205,6 @@ async function openPage(notes: NotesFile, browser: Browser): Promise<string> {
 // unless --force says to replace them. Says where replies will arrive.
 function store(file: string, force: boolean): NotesFile {
   const notes = readNotes(file);
-  const size = JSON.stringify(notes).length;
-  if (size > MAX_NOTES) fail(`${file}: the notes are ${size} bytes; a page's notes can be at most ${MAX_NOTES}, so the browser can take them`);
   const before = findPage(pageKey(notes.url));
   if (before?.session && session && before.session !== session && !force) {
     fail(`another agent session (${short(before.session)}) wrote the notes for ${notes.url}; pass --force to replace them`);
@@ -215,7 +215,7 @@ function store(file: string, force: boolean): NotesFile {
     note.thread ??= old?.thread;
     note.posted ??= old?.posted;
   }
-  console.log(`saved ${savePage(merged)}`);
+  console.log(`saved ${save(merged)}`);
   console.log(`replies: tater watch --page ${notes.url}`);
   return merged;
 }
@@ -275,7 +275,7 @@ switch (values.help ? 'help' : command) {
       if (note) note.posted = url;
       const problems = validate(page);
       if (problems.length) fail(problems.join('\n'));
-      savePage(page);
+      save(page);
       console.log(`marked ${id} posted on ${page.url}`);
     }
     break;

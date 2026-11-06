@@ -312,7 +312,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
       awayLinks(note),
       threadView(note.id),
       ...replyBox('Reply to Claude… (Enter to send, Shift+Enter for a new line)', text => {
-        sendDraft({ kind: 'reply', noteId: note.id, quote: note.quote, text });
+        sendDraft({ kind: 'reply', noteId: note.id, quote: note.quote?.slice(0, MAX_QUOTE), text });
         openCard(note, range);
       }, note.id),
       h('div', { class: 'row' },
@@ -400,8 +400,11 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   }
   function openAsk(range: Range): void {
     closeCard();
-    const quote = norm(range.toString()).slice(0, MAX_QUOTE).trimEnd();
-    const { prefix, suffix } = context(scopeRoot(), range);
+    // A selection longer than MAX_QUOTE is cut, and its suffix is the selected text after the cut.
+    const all = norm(range.toString());
+    const quote = all.slice(0, MAX_QUOTE).trimEnd();
+    const { prefix, suffix: after } = context(scopeRoot(), range);
+    const suffix = quote.length < all.length ? all.slice(quote.length).trimStart().slice(0, 32) : after;
     card = h('div', { class: 'card' },
       h('button', { class: 'x', onclick: closeCard }, '×'),
       h('div', { class: 'k', style: `color:${ACCENT}` }, 'Ask Claude'),

@@ -2,8 +2,10 @@
 // https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging
 
 // Chrome refuses messages from the host larger than 1 MB. A page's reply carries its notes, its
-// shared state, and its unanswered messages, so each gets a share: tater push refuses larger
-// notes, and the helper refuses a message that would take the unanswered ones past theirs.
+// shared state, and its unanswered messages, so each gets a share, in UTF-8 bytes of compact
+// JSON: tater refuses to save larger notes, and the helper refuses a message that would take the
+// unanswered ones past theirs. The state left out of the reply (the placement report) is what
+// could grow with the notes; the rest is a few bytes per note.
 export const MAX_TO_BROWSER = 1024 * 1024;
 export const MAX_NOTES = MAX_TO_BROWSER / 2;
 export const MAX_PENDING = MAX_TO_BROWSER / 4;
@@ -17,7 +19,7 @@ export function encode(message: unknown): Buffer {
 }
 
 // Feed it chunks as they arrive from stdin; it calls onMessage once per complete message, and
-// onBad for a message that isn't JSON, which it drops.
+// onBad for a message that isn't a JSON object, which it drops.
 export function decoder(onMessage: (message: unknown) => void, onBad: (e: Error) => void = () => {}): (chunk: Buffer) => void {
   let pending = Buffer.alloc(0);
   return chunk => {
@@ -29,7 +31,8 @@ export function decoder(onMessage: (message: unknown) => void, onBad: (e: Error)
       pending = pending.subarray(4 + size);
       let message: unknown;
       try { message = JSON.parse(body.toString('utf8')); } catch (e) { onBad(e as Error); continue; }
-      onMessage(message);
+      if (typeof message === 'object' && message !== null && !Array.isArray(message)) onMessage(message);
+      else onBad(new Error('not an object'));
     }
   };
 }

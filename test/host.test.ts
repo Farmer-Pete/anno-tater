@@ -26,15 +26,23 @@ test('framing refuses messages over the browser limit', () => {
   assert.throws(() => encode('x'.repeat(MAX_TO_BROWSER)), /browser limit/);
 });
 
-test('framing drops a message that isn\'t JSON and reads the next one', () => {
+// What a list of messages takes in the page's reply, as the helper counts it.
+const size = (ms: Outgoing[]) => Buffer.byteLength(JSON.stringify(ms), 'utf8');
+
+// A frame around any bytes, which encode would never write.
+const frame = (text: string) => {
+  const body = Buffer.from(text, 'utf8');
+  const head = Buffer.alloc(4);
+  head.writeUInt32LE(body.length, 0);
+  return Buffer.concat([head, body]);
+};
+
+test('framing drops a message that isn\'t a JSON object and reads the next one', () => {
   const got: unknown[] = [], bad: string[] = [];
   const feed = decoder(m => got.push(m), e => bad.push(e.message));
-  const junk = Buffer.from('{not json', 'utf8');
-  const head = Buffer.alloc(4);
-  head.writeUInt32LE(junk.length, 0);
-  feed(Buffer.concat([head, junk, encode({ ok: true })]));
+  feed(Buffer.concat([frame('{not json'), frame('null'), frame('[1]'), encode({ ok: true })]));
   assert.deepEqual(got, [{ ok: true }]);
-  assert.equal(bad.length, 1);
+  assert.equal(bad.length, 3);
 });
 
 const notes: NotesFile = {
@@ -120,9 +128,10 @@ test('the helper refuses messages that would make the page too big for the brows
     await h.waitFor('hello');
     h.send({ type: 'send', message: message('long', 'x'.repeat(MAX_TEXT + 1)) });
     assert.match(JSON.stringify(await h.waitFor('error')), /over the size limit/);
-    // Unanswered messages up to their share of the limit; the next one is refused.
-    const each = 'y'.repeat(MAX_TEXT);
-    for (let i = 0; JSON.stringify((await h.get())?.pending ?? []).length + MAX_TEXT < MAX_PENDING - 1000; i++) {
+    // Unanswered messages up to their share of the limit, counted in UTF-8 bytes (each é is two);
+    // the next one is refused.
+    const each = 'é'.repeat(MAX_TEXT);
+    for (let i = 0, waiting = (await h.get())?.pending ?? []; size([...waiting, message(`m${i}`, each)]) <= MAX_PENDING; i++, waiting = (await h.get())?.pending ?? []) {
       h.send({ type: 'send', message: message(`m${i}`, each) });
       await h.waitFor('sent');
     }
@@ -134,20 +143,45 @@ test('the helper refuses messages that would make the page too big for the brows
     h.send({ type: 'get', page });
     const error = await h.waitFor('error');
     assert.equal(error.type === 'error' && error.page, page);
-    // The malformed frame the browser never sends: the helper drops it and keeps going.
-    const junk = Buffer.from('nope');
-    const head = Buffer.alloc(4);
-    head.writeUInt32LE(junk.length, 0);
-    h.child.stdin.write(Buffer.concat([head, junk]));
+    // Frames the browser never sends: the helper drops them and keeps going.
+    h.child.stdin.write(frame('nope'));
     assert.match(JSON.stringify(await h.waitFor('error')), /isn't JSON/);
+    h.child.stdin.write(frame('null'));
+    assert.match(JSON.stringify(await h.waitFor('error')), /not an object/);
     writeFileSync(join(dir, 'data', readdirSync(join(dir, 'data'))[0] ?? '', 'page.json'), JSON.stringify(notes));
     assert.equal((await h.get())?.notes?.notes[0]?.id, 'n1');
   } finally {
     h.child.kill();
   }
-  // tater push refuses notes over their share.
+  // tater refuses to save notes over their share: a push, or a reply that would grow them past it.
   writeFileSync(file, JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], body: 'z'.repeat(MAX_NOTES) }] }));
   assert.throws(() => tater(dir, 'push', file), /at most 524288/);
+  writeFileSync(file, JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], body: 'z'.repeat(MAX_NOTES - 1000) }] }));
+  tater(dir, 'push', file);
+  const h2 = host(dir);
+  try {
+    await h2.waitFor('hello');
+    h2.send({ type: 'send', message: message('q', 'why?') });
+    await h2.waitFor('sent');
+  } finally {
+    h2.child.kill();
+  }
+  assert.throws(() => tater(dir, 'reply', 'q', 'w'.repeat(2000)), /at most 524288/);
+});
+
+test('the page\'s reply leaves out the placement report', async () => {
+  const { dir } = pushed();
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    const placement = { at: '', notes: '', placed: 0, onPage: 0, unplaced: [{ id: 'n1', quote: 'some text' }], ambiguous: [] };
+    h.send({ type: 'state', page, state: { done: { n1: true }, placement } });
+    await h.waitFor('pages');
+    assert.deepEqual((await h.get())?.state, { done: { n1: true } });
+    assert.match(tater(dir, 'status', '--page', notes.url), /unplaced: n1/);
+  } finally {
+    h.child.kill();
+  }
 });
 
 test('each page keeps its notes, state, and inbox in one folder', async () => {
@@ -289,7 +323,8 @@ test('status --page prints what the page last placed, and says when the notes mo
     const placement = { at: '2026-10-29T12:00:00.000Z', notes: anchorsKey(notes), placed: 16, onPage: 1,
       unplaced: [{ id: 'c3', quote: 'switch_id = int(raw[:2]) * 100' }], ambiguous: [{ id: 't5', quote: 'More than one match', matches: 2 }] };
     h.send({ type: 'state', page, state: { placement } });
-    await eventually(async () => (await h.get())?.state.placement?.placed, 16);
+    // The page's reply leaves the report out, so read it where tater does.
+    await eventually(async () => placementIn(dir)?.placed, 16);
   } finally {
     h.child.kill();
   }
@@ -313,7 +348,7 @@ test('status --page says when the pull request moved past the notes commit', asy
     await h.waitFor('hello');
     const placement = { at: '', notes: '', placed: 1, onPage: 0, unplaced: [], ambiguous: [], commit: 'def5678'.padEnd(40, '0') };
     h.send({ type: 'state', page, state: { placement } });
-    await eventually(async () => (await h.get())?.state.placement?.commit, placement.commit);
+    await eventually(async () => placementIn(dir)?.commit, placement.commit);
   } finally {
     h.child.kill();
   }
@@ -368,6 +403,12 @@ test('export --github-review turns queued notes into a pending review', async ()
 });
 
 // Retries until read() returns want, for changes that arrive through file watching.
+// The placement report the one page in a data folder last saved.
+function placementIn(dir: string): { placed?: number; commit?: string } | undefined {
+  const [folder] = readdirSync(join(dir, 'data'));
+  try { return (JSON.parse(readFileSync(join(dir, 'data', folder ?? '', 'state.json'), 'utf8')) as { placement?: { placed?: number; commit?: string } }).placement; } catch { return undefined; }
+}
+
 async function eventually(read: () => Promise<unknown>, want: unknown): Promise<void> {
   for (let i = 0; i < 50; i++) {
     try { assert.deepEqual(await read(), want); return; } catch { await new Promise(r => setTimeout(r, 40)); }

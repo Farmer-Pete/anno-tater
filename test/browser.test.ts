@@ -259,6 +259,35 @@ test('page script can\'t open a card, ask, send, queue, or tick a step as the pe
   assert.equal((await hook(page)).sent.length, 1);
 });
 
+test('a long quote is cut to MAX_QUOTE on the way out, with the suffix taken after the cut', async () => {
+  const words = Array.from({ length: 400 }, (_, i) => `word${i}`).join(' ');
+  const page = await open(`<p id="long">${words}</p><p>After.</p>`, { notes: [{ id: 'n', kind: 'info', quote: words }] });
+  // A reply on a note whose own quote is long.
+  await clickText(page, 'word10 ');
+  await shadow(page, '.card textarea').click();
+  await page.keyboard.type('reply');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  // A question about a long selection, made with the mouse.
+  const ends = await page.evaluate(() => {
+    const r = document.querySelector('#long')?.getBoundingClientRect();
+    return r && { x0: r.left + 1, y0: r.top + 4, x1: r.right - 2, y1: r.bottom - 4 };
+  });
+  assert.ok(ends);
+  await page.mouse.move(ends.x0, ends.y0);
+  await page.mouse.down();
+  await page.mouse.move(ends.x1, ends.y1, { steps: 5 });
+  await page.mouse.up();
+  await shadow(page, '.ask button').click();
+  await page.keyboard.type('what?');
+  await page.keyboard.press('Enter');
+  const { sent } = await page.evaluate(() => (window as unknown as { tater: { sent: { kind: string; quote: string; suffix: string }[] } }).tater);
+  assert.deepEqual(sent.map(m => [m.kind, m.quote.length <= 1000]), [['reply', true], ['ask', true]]);
+  const ask = sent[1];
+  assert.ok(ask && words.startsWith(ask.quote), 'the quote is the start of the selection');
+  assert.ok(ask && words.slice(ask.quote.length).trimStart().startsWith(ask.suffix), `the suffix follows the cut: ${ask?.suffix}`);
+});
+
 test('a tall card stays on screen: it caps its height to the room it has and scrolls', async () => {
   const filler = Array.from({ length: 12 }, (_, i) => `<p>Log entry ${i}: levels normal.</p>`).join('');
   const body = Array.from({ length: 30 }, (_, i) => `Paragraph ${i} of a long explanation.`).join('\n\n');
