@@ -10,8 +10,9 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
+import { MAX_QUOTE, MAX_TEXT, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
 import { mergeState, type PageState } from '../shared/protocol.ts';
+import { MAX_PENDING } from './framing.ts';
 
 export const dataDir = () =>
   process.env.ANNO_TATER_HOME ?? join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'anno-tater');
@@ -89,7 +90,13 @@ export function saveState(page: string, patch: Partial<PageState>): void {
 }
 
 // ---------- messages ----------
+// Refuses a message over the size limits, or one that would take the page's unanswered messages
+// past their share of the browser's limit, which would leave the page without its notes.
 export function appendInbox(message: Outgoing): void {
+  if ((message.text?.length ?? 0) > MAX_TEXT || (message.quote?.length ?? 0) > MAX_QUOTE) throw new Error(`message ${message.id} is over the size limit`);
+  if (JSON.stringify([...pending(message.page), message]).length > MAX_PENDING) {
+    throw new Error(`${message.page} has too many unanswered messages; answer or ack them first`);
+  }
   mkdirSync(pageDir(message.page), { recursive: true });
   appendFileSync(inboxFile(message.page), `${JSON.stringify(message)}\n`);
 }

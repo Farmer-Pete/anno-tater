@@ -173,6 +173,13 @@ test('quotes use prefix to pick a match, endQuote to cover a range, and report w
   assert.equal((await saved(page)).filter(s => 'placement' in s).length, reports.length);
 });
 
+test('a scope that isn\'t a valid selector falls back to main, and the report says so', async () => {
+  const page = await open(PROSE, { scope: 'main >>> nope', notes: [{ id: 'n', kind: 'info', quote: 'Lock out the breaker.' }] });
+  assert.deepEqual((await painted(page)).info?.map(h => h.text), ['Lock out the breaker.']);
+  const report = (await saved(page)).find(s => 'placement' in s)?.placement as { placed: number; scopeProblem?: string };
+  assert.deepEqual([report.placed, report.scopeProblem], [1, 'invalid']);
+});
+
 test('a quote that renders late places once its text appears', async () => {
   const page = await open('<div id="app">Loading…</div>', { notes: [{ id: 'n', kind: 'info', quote: 'Lock out the breaker.' }] });
   assert.deepEqual((await painted(page)).info, []);

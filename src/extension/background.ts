@@ -64,6 +64,11 @@ function onHelper(raw: unknown): void {
     broadcast({ type: 'delivered', ids: m.ids });
   } else if (m.type === 'error') {
     console.warn('Anno Tater helper:', m.message);
+    // A page the helper couldn't send: stop waiting, so the page falls back to this browser's copy.
+    if (m.page) {
+      for (const r of waiting.get(m.page) ?? []) r(null);
+      waiting.delete(m.page);
+    }
   }
 }
 

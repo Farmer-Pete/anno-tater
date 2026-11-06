@@ -4,8 +4,8 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { decoder, encode, MAX_TO_BROWSER } from '../src/host/framing.ts';
-import { anchorsKey, pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
+import { decoder, encode, MAX_NOTES, MAX_PENDING, MAX_TO_BROWSER } from '../src/host/framing.ts';
+import { anchorsKey, MAX_TEXT, pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
 import type { FromHost } from '../src/shared/protocol.ts';
 
 const home = () => mkdtempSync(join(tmpdir(), 'anno-tater-'));
@@ -24,6 +24,17 @@ test('framing round-trips messages split across chunks', () => {
 
 test('framing refuses messages over the browser limit', () => {
   assert.throws(() => encode('x'.repeat(MAX_TO_BROWSER)), /browser limit/);
+});
+
+test('framing drops a message that isn\'t JSON and reads the next one', () => {
+  const got: unknown[] = [], bad: string[] = [];
+  const feed = decoder(m => got.push(m), e => bad.push(e.message));
+  const junk = Buffer.from('{not json', 'utf8');
+  const head = Buffer.alloc(4);
+  head.writeUInt32LE(junk.length, 0);
+  feed(Buffer.concat([head, junk, encode({ ok: true })]));
+  assert.deepEqual(got, [{ ok: true }]);
+  assert.equal(bad.length, 1);
 });
 
 const notes: NotesFile = {
@@ -99,6 +110,44 @@ test('helper, CLI and inbox work end to end', async () => {
   } finally {
     h.child.kill();
   }
+});
+
+test('the helper refuses messages that would make the page too big for the browser, and says which page failed', async () => {
+  const { dir, file } = pushed();
+  const h = host(dir);
+  const message = (id: string, text: string): Outgoing => ({ id, at: '', page, url: notes.url, kind: 'reply', noteId: 'n1', text });
+  try {
+    await h.waitFor('hello');
+    h.send({ type: 'send', message: message('long', 'x'.repeat(MAX_TEXT + 1)) });
+    assert.match(JSON.stringify(await h.waitFor('error')), /over the size limit/);
+    // Unanswered messages up to their share of the limit; the next one is refused.
+    const each = 'y'.repeat(MAX_TEXT);
+    for (let i = 0; JSON.stringify((await h.get())?.pending ?? []).length + MAX_TEXT < MAX_PENDING - 1000; i++) {
+      h.send({ type: 'send', message: message(`m${i}`, each) });
+      await h.waitFor('sent');
+    }
+    h.send({ type: 'send', message: message('one-too-many', each) });
+    assert.match(JSON.stringify(await h.waitFor('error')), /too many unanswered messages/);
+    assert.ok(encode(await h.get()).length < MAX_TO_BROWSER, 'the page still fits');
+    // A notes file too big for the browser: the error names the page.
+    writeFileSync(join(dir, 'data', readdirSync(join(dir, 'data'))[0] ?? '', 'page.json'), JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], body: 'z'.repeat(MAX_TO_BROWSER) }] }));
+    h.send({ type: 'get', page });
+    const error = await h.waitFor('error');
+    assert.equal(error.type === 'error' && error.page, page);
+    // The malformed frame the browser never sends: the helper drops it and keeps going.
+    const junk = Buffer.from('nope');
+    const head = Buffer.alloc(4);
+    head.writeUInt32LE(junk.length, 0);
+    h.child.stdin.write(Buffer.concat([head, junk]));
+    assert.match(JSON.stringify(await h.waitFor('error')), /isn't JSON/);
+    writeFileSync(join(dir, 'data', readdirSync(join(dir, 'data'))[0] ?? '', 'page.json'), JSON.stringify(notes));
+    assert.equal((await h.get())?.notes?.notes[0]?.id, 'n1');
+  } finally {
+    h.child.kill();
+  }
+  // tater push refuses notes over their share.
+  writeFileSync(file, JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], body: 'z'.repeat(MAX_NOTES) }] }));
+  assert.throws(() => tater(dir, 'push', file), /at most 524288/);
 });
 
 test('each page keeps its notes, state, and inbox in one folder', async () => {

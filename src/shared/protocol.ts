@@ -38,6 +38,7 @@ export interface Placement {
   onPage: number; // notes without a quote
   unplaced: { id: string; quote: string }[];
   ambiguous: { id: string; quote: string; matches: number }[]; // placed on the best of several equal matches
+  scopeProblem?: 'invalid' | 'no match'; // scope wasn't a usable selector, so notes placed within main or the body
   commit?: string; // the pull request's head commit as the page showed it
 }
 
@@ -53,4 +54,5 @@ export type FromHost =
   | { type: 'page'; page: string; notes: NotesFile | null; state: PageState; pending: Outgoing[] }
   | { type: 'sent'; id: string }
   | { type: 'delivered'; ids: string[] }
-  | { type: 'error'; message: string };
+  // page: the page a failed get was for, so the extension stops waiting for it
+  | { type: 'error'; message: string; page?: string };

@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, validate, whereText, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
+import { MAX_NOTES } from '../host/framing.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
 import { dataDir, findPage, loadPages, markDelivered, pageDir, pagesDir, pending, readAllInboxes, readDelivered, readState, savePage } from '../host/store.ts';
 
@@ -156,6 +157,7 @@ function placementLines(p: NotesFile): string[] {
   if (p.commit && r.commit && !r.commit.startsWith(p.commit.toLowerCase())) lines.push(`commit: the notes are for ${p.commit.slice(0, 7)}, but the page shows ${r.commit.slice(0, 7)}`);
   for (const u of r.unplaced) lines.push(`unplaced: ${u.id} ${JSON.stringify(u.quote)}`);
   for (const a of r.ambiguous) lines.push(`ambiguous: ${a.id} ${JSON.stringify(a.quote)} (${a.matches} matches; add prefix or suffix)`);
+  if (r.scopeProblem) lines.push(`scope: ${JSON.stringify(p.scope)} ${r.scopeProblem === 'invalid' ? 'is not a valid CSS selector' : 'matches nothing on the page'}; notes placed within main or the body`);
   return lines;
 }
 
@@ -201,6 +203,8 @@ async function openPage(notes: NotesFile, browser: Browser): Promise<string> {
 // unless --force says to replace them. Says where replies will arrive.
 function store(file: string, force: boolean): NotesFile {
   const notes = readNotes(file);
+  const size = JSON.stringify(notes).length;
+  if (size > MAX_NOTES) fail(`${file}: the notes are ${size} bytes; a page's notes can be at most ${MAX_NOTES}, so the browser can take them`);
   const before = findPage(pageKey(notes.url));
   if (before?.session && session && before.session !== session && !force) {
     fail(`another agent session (${short(before.session)}) wrote the notes for ${notes.url}; pass --force to replace them`);
