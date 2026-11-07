@@ -101,7 +101,7 @@ function rekeyInbox(dir: string): void {
     let m: Outgoing | null;
     try { m = JSON.parse(line) as Outgoing | null; } catch { keep.push(line); continue; }
     if (typeof m?.url !== 'string' || !originPattern(m.url)) { keep.push(line); continue; }
-    const page = messagePage(m);
+    const page = typeof m.page === 'string' ? messagePage(m) : pageKey(m.url); // a record without one keys by its address
     const fixed = m.page === page ? line : JSON.stringify({ ...m, page });
     if (fixed !== line) changed = true;
     if (pageDir(page) === dir) keep.push(fixed); else { away.set(page, [...(away.get(page) ?? []), fixed]); changed = true; }
