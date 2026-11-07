@@ -2,7 +2,7 @@
 import { mkdirSync, readFileSync, watch } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { dirname, resolve } from 'node:path';
-import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, validate, whereText, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
+import { anchorsKey, encodeFragment, glossaryProblems, messagePage, pageKey, parseNotes, validate, whereText, type Note, type NotesFile, type Outgoing, type Term } from '../shared/notes.ts';
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
@@ -65,8 +65,8 @@ const short = (id: string) => id.slice(0, 8);
 
 // The page's notes. A question asked on a page without notes starts a notes file there, at its
 // page key: the address without the #fragment (a #/route stays), which the page's link could fill
-// with text of its own. The key comes from the address, in case older code wrote the message.
-const pageFor = (m: Outgoing): NotesFile => findPage(pageKey(m.url)) ?? { url: pageKey(m.url), notes: [], session };
+// with text of its own. messagePage adds the scheme to a page older code stored without one.
+const pageFor = (m: Outgoing): NotesFile => findPage(messagePage(m)) ?? { url: messagePage(m), notes: [], session };
 
 // Saves a page's notes, or stops with the reason they can't be saved (too big for the browser).
 const save = (notes: NotesFile) => { try { return savePage(notes); } catch (e) { return fail((e as Error).message); } };

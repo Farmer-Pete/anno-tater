@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { messageProblems, originPattern, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
+import { messagePage, messageProblems, originPattern, pageKey, parseNotes, type NotesFile, type Outgoing } from '../shared/notes.ts';
 import { mergeState, stateProblems, type PageState } from '../shared/protocol.ts';
 import { MAX_NOTES, MAX_PENDING, MAX_STATE } from './framing.ts';
 
@@ -63,10 +63,15 @@ const keyIn = (json: string) => {
   return typeof url === 'string' && originPattern(url) ? pageKey(url) : null;
 };
 
-// The page key a page folder belongs to, from its notes' address or else its first message's.
+// The page key a page folder belongs to, from its notes' address or else its first message's page.
 function folderKey(dir: string): string | null {
   try { const key = keyIn(readFileSync(join(dir, 'page.json'), 'utf8')); if (key) return key; } catch { /* no notes */ }
-  try { return keyIn(readFileSync(join(dir, 'inbox.jsonl'), 'utf8').split('\n')[0] ?? ''); } catch { return null; }
+  try {
+    const m = JSON.parse(readFileSync(join(dir, 'inbox.jsonl'), 'utf8').split('\n')[0] ?? '') as Outgoing | null;
+    return typeof m?.url === 'string' && typeof m.page === 'string' && originPattern(m.url) ? messagePage(m) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Moves an old page folder's files into the folder its page has now. When both have a file, the
@@ -84,9 +89,9 @@ function mergeInto(from: string, to: string): void {
   rmSync(from, { recursive: true, force: true });
 }
 
-// Gives every message in a folder's inbox the page key its address has now, and moves a message
-// whose key belongs to another folder there: an http page and its https twin shared one inbox
-// before the key kept the scheme. A line that isn't JSON stays as it is.
+// Gives every message in a folder's inbox its page's current key (see messagePage), and moves a
+// message whose key belongs to another folder there: an http page and its https twin shared one
+// inbox before the key kept the scheme. A line that isn't JSON stays as it is.
 function rekeyInbox(dir: string): void {
   const file = join(dir, 'inbox.jsonl');
   if (!existsSync(file)) return;
@@ -96,7 +101,7 @@ function rekeyInbox(dir: string): void {
     let m: Outgoing | null;
     try { m = JSON.parse(line) as Outgoing | null; } catch { keep.push(line); continue; }
     if (typeof m?.url !== 'string' || !originPattern(m.url)) { keep.push(line); continue; }
-    const page = pageKey(m.url);
+    const page = typeof m.page === 'string' ? messagePage(m) : pageKey(m.url); // a record without one keys by its address
     const fixed = m.page === page ? line : JSON.stringify({ ...m, page });
     if (fixed !== line) changed = true;
     if (pageDir(page) === dir) keep.push(fixed); else { away.set(page, [...(away.get(page) ?? []), fixed]); changed = true; }

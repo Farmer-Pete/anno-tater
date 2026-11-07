@@ -616,3 +616,25 @@ test('an answer starts its notes at the address of the message, even when older 
   assert.match(tater(dir, 'reply', 'z1', 'this'), /added note q-z1/);
   assert.match(tater(dir, 'status', '--page', 'https://example.org/z'), /page: https:\/\/example\.org\/z \(1 notes\)/);
 });
+
+test('migration keeps a message on the page it was stored under, even when its address now keys another page', () => {
+  // Before page keys kept #/ routes, a reply sent from https://host/#/jobs/1 was stored under the
+  // bare page, beside that page's notes.
+  const dir = home();
+  const folder = join(dir, 'data', oldName('example.com/', 8));
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'page.json'), JSON.stringify({ ...notes, url: 'https://example.com/' }));
+  const reply = { id: 'r1', at: '', page: 'example.com/', url: 'https://example.com/#/jobs/1', kind: 'reply', noteId: 'n1', text: 'hi' };
+  const { page: _, ...noPage } = { ...reply, id: 'r2', url: 'https://example.com/' }; // a record with no page at all keys by its address
+  writeFileSync(join(folder, 'inbox.jsonl'), `${JSON.stringify(reply)}\n${JSON.stringify(noPage)}\n`);
+  // And a question on a page without notes, from the same time.
+  const asked = join(dir, 'data', oldName('example.org/', 8));
+  mkdirSync(asked);
+  writeFileSync(join(asked, 'inbox.jsonl'), `${JSON.stringify({ ...reply, id: 'q1', kind: 'ask', noteId: null, quote: 'q', page: 'example.org/', url: 'https://example.org/#/x' })}\n`);
+  const status = tater(dir, 'status');
+  assert.match(status, /page: https:\/\/example\.com\/ \(1 notes, 2 waiting/);
+  assert.ok(!readdirSync(join(dir, 'data')).some(f => f.includes('undefined')));
+  assert.match(status, /questions from pages without notes: 1/);
+  assert.match(tater(dir, 'reply', 'q1', 'there'), /added note q-q1/);
+  assert.match(tater(dir, 'status'), /page: https:\/\/example\.org\/ \(1 notes\)/);
+});
