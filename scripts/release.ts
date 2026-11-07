@@ -8,6 +8,8 @@ const { version } = JSON.parse(readFileSync('package.json', 'utf8')) as { versio
 const tag = `v${version}`;
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 if (git('status', '--porcelain')) throw new Error('commit or stash your changes first: the tag names this commit');
-git('tag', '-s', tag, '-m', `Anno Tater ${version}`);
+git('fetch', '--quiet', 'origin', 'main');
+try { git('merge-base', '--is-ancestor', 'HEAD', 'origin/main'); } catch { throw new Error('release from a commit on origin/main: the Release workflow refuses any other'); }
+execFileSync('git', ['tag', '-s', tag, '-m', `Anno Tater ${version}`], { stdio: 'inherit' }); // the signer may prompt
 execFileSync('git', ['push', 'origin', tag], { stdio: 'inherit' });
 console.log(`pushed ${tag}; the Release workflow publishes it`);

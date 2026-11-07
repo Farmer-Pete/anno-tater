@@ -40,8 +40,12 @@ else
   # SHA256SUMS comes from the same release page as the files, so on its own it can't catch a
   # swapped release. With the GitHub CLI logged in, check that this repo's Release workflow built
   # it; the checksums below then vouch for every other file.
-  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    gh attestation verify "$SRC/SHA256SUMS" --repo "$REPO" >/dev/null 2>&1 || die "SHA256SUMS has no valid attestation from $REPO; nothing was installed"
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && gh attestation verify --help >/dev/null 2>&1; then
+    # A release's own copy also pins the tag it was published for.
+    set -- --repo "$REPO" --signer-workflow "$REPO/.github/workflows/release.yml"
+    if [ "$TAG" != latest ]; then set -- "$@" --source-ref "refs/tags/$TAG"; fi
+    gh attestation verify "$SRC/SHA256SUMS" "$@" >/dev/null 2>&1 \
+      || die "SHA256SUMS wasn't built by $REPO's Release workflow for $TAG; nothing was installed"
     echo "  Checked: $REPO's Release workflow built these files."
   else
     echo "  Log in to the GitHub CLI (gh auth login) to also check where these files were built."
