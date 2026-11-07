@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { createHash } from 'node:crypto';
+import { nodePath } from '../src/host/install.ts';
 import { decoder, encode, MAX_NOTES, MAX_PENDING, MAX_STATE, MAX_TO_BROWSER } from '../src/host/framing.ts';
 import { anchorsKey, MAX_TEXT, pageKey, type NotesFile, type Outgoing } from '../src/shared/notes.ts';
 import type { FromHost } from '../src/shared/protocol.ts';
@@ -471,4 +473,80 @@ test('tater finds the extension address Zen and Firefox store in prefs.js', () =
   const script = "import('./src/host/browsers.ts').then(m => console.log(m.geckoBase('zen'), m.geckoBase('firefox-dev')))";
   const out = execFileSync(process.execPath, ['--disable-warning=ExperimentalWarning', '-e', script], { env: { ...process.env, HOME: fakeHome }, encoding: 'utf8' });
   assert.equal(out.trim(), 'moz-extension://uuid-123 null');
+});
+
+// A page folder's name in data layout 1: 8 hex digits of the key's SHA-256.
+const layout1Name = (key: string) => `${key.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)}-${createHash('sha256').update(key).digest('hex').slice(0, 8)}`;
+
+// The permission bits of a file or folder, as octal digits.
+const mode = (path: string) => (statSync(path).mode & 0o777).toString(8);
+
+test('the data folder and everything in it are private to the person', async () => {
+  const { dir } = pushed();
+  const h = host(dir);
+  try {
+    await h.waitFor('hello');
+    h.send({ type: 'send', message: { id: 'm1', at: '', page, url: notes.url, kind: 'reply', noteId: 'n1', text: 'hi' } satisfies Outgoing });
+    await h.waitFor('sent');
+    h.send({ type: 'state', page, state: { done: { n1: true } } });
+    await h.waitFor('pages');
+  } finally {
+    h.child.kill();
+  }
+  tater(dir, 'watch', '--page', notes.url, '--once'); // writes delivered.jsonl
+  const [folder] = readdirSync(join(dir, 'data'));
+  const pageFolder = join(dir, 'data', folder ?? '');
+  assert.deepEqual([dir, join(dir, 'data'), pageFolder].map(mode), ['700', '700', '700']);
+  assert.deepEqual(['page.json', 'inbox.jsonl', 'state.json'].map(f => mode(join(pageFolder, f))), ['600', '600', '600']);
+  assert.equal(mode(join(dir, 'delivered.jsonl')), '600');
+});
+
+test('tater moves an older data folder to the current layout', () => {
+  const dir = home();
+  // Layout 1: 8 hex digits, and whatever modes the umask gave.
+  const withNotes = join(dir, 'data', layout1Name(page));
+  const asked = join(dir, 'data', layout1Name('example.org/q'));
+  mkdirSync(withNotes, { recursive: true });
+  mkdirSync(asked, { recursive: true });
+  writeFileSync(join(withNotes, 'page.json'), JSON.stringify({ ...notes, notes: [{ ...notes.notes[0], thread: [{ from: 'you', text: 'kept' }] }] }));
+  writeFileSync(join(asked, 'inbox.jsonl'), `${JSON.stringify({ id: 'q1', at: '', page: 'example.org/q', url: 'https://example.org/q', kind: 'ask', noteId: null, quote: 'x', text: 'what?' })}\n`);
+  // A folder with only state can't say its page, and a stray file in another isn't the folder's.
+  const stateOnly = join(dir, 'data', layout1Name('example.org/s'));
+  mkdirSync(stateOnly);
+  writeFileSync(join(stateOnly, 'state.json'), '{"done":{}}');
+  writeFileSync(join(withNotes, 'state.json'), '{"done":{"n1":true}}');
+  writeFileSync(join(dir, 'data', '.DS_Store'), '');
+  chmodSync(join(withNotes, 'page.json'), 0o644);
+  chmodSync(join(asked, 'inbox.jsonl'), 0o644);
+  chmodSync(dir, 0o755);
+  assert.match(tater(dir, 'status'), /page: https:\/\/example\.com\/page \(1 notes\)/);
+  const folders = readdirSync(join(dir, 'data')).filter(f => f !== '.DS_Store').toSorted();
+  assert.deepEqual(folders.filter(f => !/-[0-9a-f]{16}$/.test(f)), [layout1Name('example.org/s')]);
+  assert.equal(folders.length, 3);
+  const moved = (prefix: string) => join(dir, 'data', folders.find(f => f.startsWith(prefix) && /-[0-9a-f]{16}$/.test(f)) ?? '');
+  assert.deepEqual([moved('example.com'), join(moved('example.com'), 'state.json'), join(moved('example.org-q'), 'inbox.jsonl')].map(mode), ['700', '600', '600']);
+  assert.match(tater(dir, 'watch', '--all', '--once'), /"id":"q1"/);
+  assert.equal(tater(dir, 'reply', 'q1', 'an answer').trim(), 'added note q-q1');
+  assert.deepEqual([mode(dir), mode(join(dir, 'data', folders.find(f => f.startsWith('example.com')) ?? '', 'page.json'))], ['700', '600']);
+  assert.equal(readFileSync(join(dir, 'layout'), 'utf8').trim(), '2');
+  // An older helper or tater still running writes under the old name again: the next start moves
+  // it in, keeping messages the new folder lacks and the newer notes.
+  const stale = join(dir, 'data', layout1Name('example.org/q'));
+  mkdirSync(stale);
+  writeFileSync(join(stale, 'inbox.jsonl'), `${JSON.stringify({ id: 'q2', at: '', page: 'example.org/q', url: 'https://example.org/q', kind: 'ask', noteId: null, quote: 'y', text: 'and?' })}\n`);
+  assert.match(tater(dir, 'watch', '--all', '--once'), /"id":"q2"/);
+  assert.ok(!existsSync(stale));
+});
+
+test('the launcher names node by an absolute path, never from a relative PATH entry', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'anno-tater-path-'));
+  writeFileSync(join(cwd, 'node'), '');
+  const here = process.cwd();
+  process.chdir(cwd);
+  try {
+    assert.equal(nodePath(['.', cwd].join(':')), join(cwd, 'node'));
+    assert.equal(nodePath('.:node_modules/.bin'), process.execPath);
+  } finally {
+    process.chdir(here);
+  }
 });

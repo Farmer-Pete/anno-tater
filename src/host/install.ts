@@ -1,7 +1,7 @@
 // Registers the helper with the browsers: launcher scripts plus one host manifest per browser.
 // Browsers won't let an extension write these files, so a person runs `tater install` once.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CHROME_ID, FIREFOX_ID, HOST_NAME } from '../shared/protocol.ts';
 import { BROWSERS, hostsDir, type Browser } from './browsers.ts';
@@ -13,11 +13,12 @@ export const cliPath = () => join(binDir(), 'tater');
 const manifestPath = (browser: Browser) => join(hostsDir(browser), `${HOST_NAME}.json`);
 
 // The node on PATH, as a path that survives upgrades (Homebrew's /opt/homebrew/bin/node, not the
-// versioned Cellar path that process.execPath resolves to).
-function nodePath(): string {
-  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+// versioned Cellar path that process.execPath resolves to). Relative entries such as "." are
+// skipped: they'd pick up whatever node sits in the folder tater install ran from.
+export function nodePath(path = process.env.PATH ?? ''): string {
+  for (const dir of path.split(delimiter)) {
     const candidate = join(dir, 'node');
-    if (dir && existsSync(candidate)) return candidate;
+    if (isAbsolute(dir) && existsSync(candidate)) return candidate;
   }
   return process.execPath;
 }
@@ -50,6 +51,7 @@ export function install(browsers: Browser[]): string[] {
   const { cli, host, flags } = programs();
   writeLauncher(cliPath(), cli, flags);
   writeLauncher(hostPath(), host, flags);
+  chmodSync(binDir(), 0o700); // also tightens a bin folder an older install made
   const files = new Map(browsers.map(b => [manifestPath(b), b] as const));
   return [...files].map(([file, browser]) => {
     const manifest = {

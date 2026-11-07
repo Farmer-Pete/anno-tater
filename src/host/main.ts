@@ -1,10 +1,10 @@
 // The native messaging host. The browser starts it with the extension's id as an argument and
 // talks to it over stdin/stdout. Anything written to stdout must be a framed message, so logs go to stderr.
-import { mkdirSync, watch } from 'node:fs';
+import { watch } from 'node:fs';
 import { pageKey } from '../shared/notes.ts';
 import type { FromHost, PageSummary, ToHost } from '../shared/protocol.ts';
 import { decoder, encode, MAX_TO_BROWSER } from './framing.ts';
-import { appendInbox, dataDir, findPage, loadPages, pageRev, pending, readDelivered, readState, saveState } from './store.ts';
+import { appendInbox, dataDir, findPage, loadPages, migrate, pageRev, pending, readDelivered, readState, saveState } from './store.ts';
 
 const send = (message: FromHost) => process.stdout.write(encode(message));
 // An error the browser can always take: its text cut short, since it can quote what the page sent.
@@ -55,7 +55,7 @@ const onChange = debounced(() => {
   lastDelivered = now;
   if (fresh.length) send({ type: 'delivered', ids: fresh });
 });
-mkdirSync(dataDir(), { recursive: true });
+migrate();
 watch(dataDir(), { recursive: true }, (_event, file) => { if (!String(file).startsWith('bin')) onChange(); });
 
 process.stdin.on('data', decoder(handle, e => sendError(`dropped a message that isn't a JSON object: ${e.message}`)));

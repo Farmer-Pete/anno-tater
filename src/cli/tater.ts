@@ -6,7 +6,7 @@ import { anchorsKey, encodeFragment, glossaryProblems, pageKey, parseNotes, vali
 import { CHROME_ID } from '../shared/protocol.ts';
 import { BROWSERS, browserName, defaultBrowser, detected, geckoBase, isBrowser, openIn, type Browser } from '../host/browsers.ts';
 import { cliPath, install, installed, uninstall } from '../host/install.ts';
-import { dataDir, findPage, loadPages, markDelivered, pageDir, pagesDir, pending, readAllInboxes, readDelivered, readState, savePage } from '../host/store.ts';
+import { dataDir, findPage, loadPages, markDelivered, migrate, pageDir, pagesDir, pending, readAllInboxes, readDelivered, readState, savePage } from '../host/store.ts';
 
 const USAGE = `tater: let an agent mark up web pages with Anno Tater
 
@@ -140,7 +140,7 @@ function watchInbox(pages: string[] | null, once: boolean, skip: Set<string>): v
   // state writes, so only inbox changes count.
   let timer: NodeJS.Timeout | undefined;
   for (const dir of pages ? pages.map(pageDir) : [pagesDir()]) {
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     watch(dir, { recursive: !pages }, (_event, file) => {
       if (String(file).endsWith('inbox.jsonl')) { clearTimeout(timer); timer = setTimeout(flush, 100); }
     });
@@ -230,6 +230,8 @@ const { values, positionals } = parseArgs({
   options: { page: { type: 'string', multiple: true }, skip: { type: 'string' }, force: { type: 'boolean' }, posted: { type: 'string' }, 'github-review': { type: 'boolean' }, note: { type: 'string' }, all: { type: 'boolean' }, browser: { type: 'string' }, once: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
 });
 const [command, ...args] = positionals;
+// Commands that read or write page data bring the data folder up to date first.
+if (['push', 'open', 'watch', 'reply', 'ack', 'mark', 'export', 'status'].includes(command ?? '') && !values.help) migrate();
 const pages = [...new Set((values.page ?? []).map(pageKey))];
 
 switch (values.help ? 'help' : command) {
