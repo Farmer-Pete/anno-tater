@@ -23,3 +23,5 @@ cd anno-tater
 ```
 
 Works with Chrome, Zen, and Firefox Developer Edition, and needs Node 20 or newer.
+
+Anno Tater isn't in the Chrome Web Store or signed by Mozilla, so installing it gives up a browser protection. Chrome loads it unpacked from `~/.local/share/anno-tater/chrome` in Developer mode, and anything running as you can change that folder: the changed code runs on every site you allowed, the next time the extension reloads. The installer makes the folder readable and writable by you alone. Zen and Firefox Developer Edition install it with `xpinstall.signatures.required` set to false, which lets that browser profile install any unsigned add-on. Use a profile you keep for work you'd trust Anno Tater with, and don't install it where those trade-offs aren't yours to make, such as a managed work browser.

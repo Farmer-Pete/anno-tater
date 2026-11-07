@@ -75,9 +75,12 @@ done
 
 if has_profile "Library/Application Support/Google/Chrome" ".config/google-chrome"; then
   say "Chrome"
+  # Chrome runs this folder's code on every site the person allows, so only they can change it.
   mkdir -p "$DATA"
+  chmod 700 "$DATA"
   rm -rf "$DATA/chrome"
   cp -R "$CHROME_SRC" "$DATA/chrome"
+  chmod -R go-rwx "$DATA/chrome"
   echo "  Chrome only installs extensions from outside its store through Developer mode:"
   echo "    1. Open chrome://extensions and turn on Developer mode (top right)."
   echo "    2. Click Load unpacked and choose: $DATA/chrome"
