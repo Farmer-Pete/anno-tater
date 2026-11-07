@@ -11,7 +11,15 @@ Ask Claude to review a design doc, untangle a dense article, or walk you through
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Farmer-Pete/anno-tater/main/install.sh | sh
+curl -fsSL https://github.com/Farmer-Pete/anno-tater/releases/latest/download/install.sh | sh
+```
+
+That installs the release the script came with. The one-liner trusts the script it downloads. It checks every file against the release's `SHA256SUMS` before unpacking anything. With the GitHub CLI logged in, it also checks that this repo's Release workflow built them. To check the installer itself first:
+
+```sh
+curl -fsSLO https://github.com/Farmer-Pete/anno-tater/releases/latest/download/install.sh
+gh attestation verify install.sh --repo Farmer-Pete/anno-tater
+sh install.sh
 ```
 
 Or from a clone:

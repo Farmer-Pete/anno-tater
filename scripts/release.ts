@@ -1,18 +1,15 @@
-// Publishes GitHub release v<version> with the files install.sh downloads:
-// anno-tater-skill.tar.gz (the skill with bundled tater and helper), anno-tater-chrome.zip, and
-// anno-tater.xpi (unsigned, for Zen and Firefox Developer Edition).
+// Releases v<version> from package.json: tags this commit with a signed tag and pushes the tag.
+// The Release workflow then checks, builds, attests, and publishes the files install.sh
+// downloads (scripts/package.ts). Bump package.json's version first.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const { version } = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
-execFileSync('node', ['scripts/build.ts'], { stdio: 'inherit' });
-
-const skill = resolve('dist', 'anno-tater-skill.tar.gz');
-const chrome = resolve('dist', 'anno-tater-chrome.zip');
-for (const f of [skill, chrome]) rmSync(f, { force: true });
-execFileSync('tar', ['-czf', skill, 'skill']);
-execFileSync('zip', ['-r', '-X', '-q', chrome, '.'], { cwd: 'dist/chrome' });
-
-const assets = [skill, chrome, resolve('dist', 'anno-tater.xpi')];
-execFileSync('gh', ['release', 'create', `v${version}`, '--title', `Anno Tater ${version}`, '--generate-notes', ...assets], { stdio: 'inherit' });
+const tag = `v${version}`;
+const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+if (git('status', '--porcelain')) throw new Error('commit or stash your changes first: the tag names this commit');
+git('fetch', '--quiet', 'origin', 'main');
+try { git('merge-base', '--is-ancestor', 'HEAD', 'origin/main'); } catch { throw new Error('release from a commit on origin/main: the Release workflow refuses any other'); }
+execFileSync('git', ['tag', '-s', tag, '-m', `Anno Tater ${version}`], { stdio: 'inherit' }); // the signer may prompt
+execFileSync('git', ['push', 'origin', tag], { stdio: 'inherit' });
+console.log(`pushed ${tag}; the Release workflow publishes it`);
