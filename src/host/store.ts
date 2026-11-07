@@ -48,9 +48,11 @@ function writeAtomic(path: string, text: string): void {
 
 // ---------- layout ----------
 // 2: page folders end in 16 hex digits (they had 8), and everything is private to the person.
-const LAYOUT = 2;
-// A page folder named the way this layout names them.
-const current = (name: string) => /-[0-9a-f]{16}$/.test(name);
+// 3: the page key keeps the scheme, so folder names and the page of each inbox message change.
+const LAYOUT = 3;
+// A folder name tater 0.1.2 and older wrote: 8 hex digits. Older code still running after an
+// upgrade (a helper in an open browser, tater in another session) can write one at any time.
+const legacy = (name: string) => /-[0-9a-f]{8}$/.test(name);
 
 const isMissing = (e: unknown) => (e as NodeJS.ErrnoException).code === 'ENOENT';
 
@@ -81,6 +83,20 @@ function mergeInto(from: string, to: string): void {
   rmSync(from, { recursive: true, force: true });
 }
 
+// Gives every message in a folder's inbox the page key its address has now.
+function rekeyInbox(dir: string): void {
+  const file = join(dir, 'inbox.jsonl');
+  if (!existsSync(file)) return;
+  let changed = false;
+  const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => {
+    const m = JSON.parse(line) as Outgoing;
+    if (typeof m.url !== 'string' || m.page === pageKey(m.url)) return line;
+    changed = true;
+    return JSON.stringify({ ...m, page: pageKey(m.url) });
+  });
+  if (changed) writeAtomic(file, `${lines.join('\n')}\n`);
+}
+
 // Makes a folder and its files private. Returns false when that fails for a reason other than
 // something having moved meanwhile.
 function makePrivate(dir: string): boolean {
@@ -91,40 +107,41 @@ function makePrivate(dir: string): boolean {
   return ok;
 }
 
-// Brings the data folder up to LAYOUT. Every start, page folders still named the old way move to
-// the name their page key has now: an older helper still running in a browser, or an older tater
-// in another session, can create them at any time. Once, everything is made private, and the
-// layout file records it. Each step is safe to repeat, so several processes can run it at once,
-// and a failure never stops startup: the layout file is written only after a clean run. A folder
-// with only a state file can't say its page, so it stays where it is.
+// Brings one page folder up to LAYOUT: the name and inbox its page key has now, and private.
+// Returns false when something failed for a reason other than another process moving it first.
+function update(name: string): boolean {
+  let dir = join(pagesDir(), name);
+  try {
+    if (!statSync(dir).isDirectory()) return true; // a stray file such as .DS_Store
+    const key = folderKey(dir);
+    if (key !== null && pageDir(key) !== dir) {
+      if (existsSync(pageDir(key))) mergeInto(dir, pageDir(key)); else renameSync(dir, pageDir(key));
+      dir = pageDir(key);
+    }
+    rekeyInbox(dir);
+    return makePrivate(dir);
+  } catch (e) {
+    return isMissing(e);
+  }
+}
+
+// Brings the data folder up to LAYOUT when the helper or tater starts. Once, every page folder is
+// renamed for its page key, its inbox rekeyed, and everything made private; the layout file
+// records it. After that, each start only updates folders older code named the old way. Each step
+// is safe to repeat, so several processes can run it at once, and a failure never stops startup:
+// the layout file is written only after a clean run. A folder with only a state file can't say its
+// page, so it keeps its name.
 export function migrate(): void {
   let have = 1;
   try { have = Number(readFileSync(layoutFile(), 'utf8')) || 1; } catch { /* layout 1, or no data yet */ }
-  let clean = true;
   try { makeDir(pagesDir()); } catch { return; }
-  for (const name of readdirSync(pagesDir())) {
-    if (current(name)) continue;
-    const key = folderKey(join(pagesDir(), name));
-    if (key === null) continue;
-    try {
-      const to = pageDir(key);
-      if (existsSync(to)) mergeInto(join(pagesDir(), name), to); else renameSync(join(pagesDir(), name), to);
-      if (!makePrivate(to)) clean = false;
-    } catch (e) {
-      if (!isMissing(e)) clean = false; // another process moved it first
-    }
-  }
+  let clean = true;
+  for (const name of readdirSync(pagesDir())) if ((have < LAYOUT || legacy(name)) && !update(name)) clean = false;
   if (have >= LAYOUT) return;
-  // The data folder also holds bin and the unpacked Chrome extension, so only it and its own files
-  // change here; each page folder gets the whole treatment.
+  // The data folder also holds bin and the unpacked Chrome extension, so only it and its own
+  // files change here.
   for (const [path, mode] of [[dataDir(), PRIVATE_DIR], [pagesDir(), PRIVATE_DIR], [deliveredFile(), PRIVATE_FILE]] as const) {
     try { chmodSync(path, mode); } catch (e) { if (!isMissing(e)) clean = false; }
-  }
-  for (const name of readdirSync(pagesDir())) {
-    const dir = join(pagesDir(), name);
-    let folder = false;
-    try { folder = statSync(dir).isDirectory(); } catch { /* moved meanwhile */ }
-    if (folder && !makePrivate(dir)) clean = false; // skips stray files such as .DS_Store
   }
   if (clean) writeFileSync(layoutFile(), `${LAYOUT}\n`, { mode: PRIVATE_FILE });
 }

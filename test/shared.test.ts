@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { anchorsKey, decodeFragment, encodeFragment, findQuote, isPageNote, messageProblems, norm, originPattern, pageKey, parseNotes, validate, whereText, type NotesFile } from '../src/shared/notes.ts';
+import { anchorsKey, decodeFragment, encodeFragment, findQuote, isPageNote, messageProblems, norm, originPattern, pageKey, parseNotes, unencrypted, validate, whereText, type NotesFile } from '../src/shared/notes.ts';
 import { stateProblems } from '../src/shared/protocol.ts';
 
 const sample: NotesFile = {
@@ -40,18 +40,23 @@ test('parseNotes reports bad JSON plainly', () => {
   assert.throws(() => parseNotes('{'), /not valid JSON/);
 });
 
-test('a page key ignores the scheme and the fragment, but keeps the query', () => {
-  assert.equal(pageKey('https://example.com/docs/page#top'), 'example.com/docs/page');
-  assert.equal(pageKey('http://example.com/docs/page'), 'example.com/docs/page');
-  assert.equal(pageKey('https://example.com/a.md?plain=1'), 'example.com/a.md?plain=1');
+test('a page key keeps the scheme and the query, but not the fragment', () => {
+  assert.equal(pageKey('https://example.com/docs/page#top'), 'https://example.com/docs/page');
+  assert.equal(pageKey('http://example.com/docs/page'), 'http://example.com/docs/page');
+  assert.equal(pageKey('HTTPS://example.com/a.md?plain=1'), 'https://example.com/a.md?plain=1');
 });
 
 test('a page key keeps a fragment route, minus any anchor after it', () => {
-  assert.equal(pageKey('https://app.example.com/#/users'), 'app.example.com/#/users');
-  assert.equal(pageKey('https://app.example.com/#!/users/7'), 'app.example.com/#!/users/7');
-  assert.equal(pageKey('https://app.example.com/#/docs#install'), 'app.example.com/#/docs');
-  assert.equal(pageKey('https://app.example.com/#/'), 'app.example.com/');
-  assert.equal(pageKey('https://app.example.com/#!/'), 'app.example.com/');
+  assert.equal(pageKey('https://app.example.com/#/users'), 'https://app.example.com/#/users');
+  assert.equal(pageKey('https://app.example.com/#!/users/7'), 'https://app.example.com/#!/users/7');
+  assert.equal(pageKey('https://app.example.com/#/docs#install'), 'https://app.example.com/#/docs');
+  assert.equal(pageKey('https://app.example.com/#/'), 'https://app.example.com/');
+});
+
+test('http counts as unencrypted, except on this machine', () => {
+  assert.equal(unencrypted('http://example.com/*'), true);
+  assert.equal(unencrypted('https://example.com/*'), false);
+  assert.deepEqual(['http://localhost:3000/x', 'http://127.0.0.1/*', 'http://[::1]/'].map(unencrypted), [false, false, false]);
 });
 
 test('originPattern covers http and https only', () => {
@@ -133,12 +138,12 @@ test('a range runs from a quote to an endQuote, or from a diff line to an endLin
 });
 
 test('a message from a page must be shaped like one, and its page must match its address', () => {
-  const ok = { id: 'm1', at: '', url: 'https://example.com/a#x', page: 'example.com/a', kind: 'reply', noteId: 'n1', text: 'hi' };
+  const ok = { id: 'm1', at: '', url: 'https://example.com/a#x', page: 'https://example.com/a', kind: 'reply', noteId: 'n1', text: 'hi' };
   assert.deepEqual(messageProblems(ok), []);
   assert.deepEqual(messageProblems({ ...ok, kind: 'ask', noteId: null, quote: 'some text' }), []);
   assert.deepEqual(messageProblems({ ...ok, kind: 'done', text: null }), []);
   const bad = (patch: Record<string, unknown>) => messageProblems({ ...ok, ...patch });
-  assert.match(bad({ page: 'example.com/b' }).join(), /page key of url/);
+  assert.match(bad({ page: 'https://example.com/b' }).join(), /page key of url/);
   assert.match(bad({ url: 'javascript:alert(1)' }).join(), /http\(s\) address/);
   assert.match(bad({ id: '../../x' }).join(), /id must be/);
   assert.match(bad({ kind: 'delete' }).join(), /kind must be/);

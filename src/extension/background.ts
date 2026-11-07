@@ -4,7 +4,7 @@
 import { originPattern, pageKey } from '../shared/notes.ts';
 import { HOST_NAME, type FromHost, type PageSummary } from '../shared/protocol.ts';
 import { ext, type FromPage, type PopupState, type Request, type ToPage } from './compat.ts';
-import { localPages, localState, saveLocalState } from './local.ts';
+import { localPages, localState, migrateLocal, saveLocalState } from './local.ts';
 
 type Port = chrome.runtime.Port;
 type PageReply = Extract<FromHost, { type: 'page' }>;
@@ -232,4 +232,4 @@ ext.storage.onChanged.addListener((changes, area) => { if (area === 'local' && c
 // The helper stays connected while the browser runs, so notes pushed for a new site raise the badge
 // even when no page is open. In Chrome an open native port also keeps this worker awake.
 connectHelper();
-void syncContentScripts().then(updateBadge);
+void migrateLocal().then(syncContentScripts).then(updateBadge);

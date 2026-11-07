@@ -15,6 +15,25 @@ export async function saveLocalPage(notes: NotesFile): Promise<void> {
 
 const stateKey = (page: string) => `state:${page}`;
 
+// Page keys kept the scheme from layout 3 on. Rekeys this browser's copies of notes, and the
+// state of those pages, once.
+export async function migrateLocal(): Promise<void> {
+  const { layout = 1 } = await ext.storage.local.get('layout');
+  if ((layout as number) >= 3) return;
+  const pages = await localPages();
+  const all = await ext.storage.local.get(null);
+  const rekeyed: Record<string, NotesFile> = {}, moved: Record<string, unknown> = {}, old: string[] = [];
+  for (const [key, notes] of Object.entries(pages)) {
+    const now = pageKey(notes.url);
+    rekeyed[now] = notes;
+    if (now === key) continue;
+    if (stateKey(key) in all) moved[stateKey(now)] = all[stateKey(key)];
+    old.push(stateKey(key));
+  }
+  await ext.storage.local.set({ pages: rekeyed, ...moved, layout: 3 });
+  await ext.storage.local.remove(old);
+}
+
 export async function localState(page: string): Promise<PageState> {
   const stored = (await ext.storage.local.get(stateKey(page)))[stateKey(page)] as PageState | undefined;
   return stored ?? { done: {} };

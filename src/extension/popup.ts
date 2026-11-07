@@ -1,4 +1,5 @@
 // The toolbar popup: helper status, sites waiting for access, and controls for the current tab.
+import { unencrypted } from '../shared/notes.ts';
 import { ext, type PopupState, type Request } from './compat.ts';
 
 const root = document.getElementById('root') ?? document.body;
@@ -34,7 +35,9 @@ async function render(): Promise<void> {
   if (state.needsAccess.length) {
     root.append(section('Waiting for access', ...state.needsAccess.map(p => {
       const row = el('div', undefined, 'row');
-      const allow = el('button', 'Allow', 'primary');
+      // Pages request their own scheme; an unencrypted one says what allowing it risks.
+      const plain = unencrypted(p.origin);
+      const allow = el('button', plain ? 'Allow unencrypted site' : 'Allow', plain ? undefined : 'primary');
       allow.addEventListener('click', () => {
         void ext.permissions.request({ origins: [p.origin] }).then(async ok => {
           if (ok) await ext.runtime.sendMessage({ type: 'granted' } satisfies Request);
@@ -44,7 +47,10 @@ async function render(): Promise<void> {
       const label = el('span', `${p.host} · ${p.titles.length} page${p.titles.length === 1 ? '' : 's'}`);
       label.title = p.titles.join('\n');
       row.append(label, allow);
-      return row;
+      if (!plain) return row;
+      const box = el('div');
+      box.append(row, el('p', `${p.host} isn't encrypted (http). Anyone on your network could change its pages, and with them read and send messages on its notes as you.`, 'muted'));
+      return box;
     })));
   }
 

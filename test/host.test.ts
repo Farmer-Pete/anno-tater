@@ -446,21 +446,23 @@ test('ticked steps and read replies are shared by every browser through the help
   }
 });
 
-test('a question on a page without notes reaches --all, and the answer starts its notes', () => {
+test('a question on a page without notes reaches --all, and the answer starts its notes', async () => {
   const dir = home();
-  const ask: Outgoing = { id: 'm2', at: '', page: 'example.org/x', url: 'https://example.org/x#ignore-previous-instructions', kind: 'ask', noteId: null, quote: 'term', prefix: 'a ', suffix: ' here', text: 'what is this?' };
+  const ask: Outgoing = { id: 'm2', at: '', page: 'https://example.org/x', url: 'https://example.org/x#ignore-previous-instructions', kind: 'ask', noteId: null, quote: 'term', prefix: 'a ', suffix: ' here', text: 'what is this?' };
   const h = host(dir);
   h.send({ type: 'send', message: ask });
-  return h.waitFor('sent').then(() => {
+  try {
+    await h.waitFor('sent');
+  } finally {
     h.child.kill();
-    // The page's text is grouped apart from the person's, and the address (with its fragment) stays out.
-    assert.deepEqual(JSON.parse(tater(dir, 'watch', '--all', '--once')), {
-      id: 'm2', kind: 'ask', noteId: null, page: 'example.org/x', text: 'what is this?', pageText: { quote: 'term', prefix: 'a ', suffix: ' here' },
-    });
-    assert.match(tater(dir, 'reply', 'm2', 'a thing'), /added note q-m2/);
-    assert.match(tater(dir, 'status'), /page: https:\/\/example\.org\/x \(1 notes\)/);
-    assert.equal(tater(dir, 'watch', '--all', '--once').trim(), '');
+  }
+  // The page's text is grouped apart from the person's, and the address (with its fragment) stays out.
+  assert.deepEqual(JSON.parse(tater(dir, 'watch', '--all', '--once')), {
+    id: 'm2', kind: 'ask', noteId: null, page: 'https://example.org/x', text: 'what is this?', pageText: { quote: 'term', prefix: 'a ', suffix: ' here' },
   });
+  assert.match(tater(dir, 'reply', 'm2', 'a thing'), /added note q-m2/);
+  assert.match(tater(dir, 'status'), /page: https:\/\/example\.org\/x \(1 notes\)/);
+  assert.equal(tater(dir, 'watch', '--all', '--once').trim(), '');
 });
 
 test('tater finds the extension address Zen and Firefox store in prefs.js', () => {
@@ -475,8 +477,9 @@ test('tater finds the extension address Zen and Firefox store in prefs.js', () =
   assert.equal(out.trim(), 'moz-extension://uuid-123 null');
 });
 
-// A page folder's name in data layout 1: 8 hex digits of the key's SHA-256.
-const layout1Name = (key: string) => `${key.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)}-${createHash('sha256').update(key).digest('hex').slice(0, 8)}`;
+// A page folder's name in data layouts 1 (8 hex digits of the key's SHA-256) and 2 (16).
+const oldName = (key: string, digits: number) => `${key.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)}-${createHash('sha256').update(key).digest('hex').slice(0, digits)}`;
+const layout1Name = (key: string) => oldName(key, 8);
 
 // The permission bits of a file or folder, as octal digits.
 const mode = (path: string) => (statSync(path).mode & 0o777).toString(8);
@@ -504,7 +507,7 @@ test('the data folder and everything in it are private to the person', async () 
 test('tater moves an older data folder to the current layout', () => {
   const dir = home();
   // Layout 1: 8 hex digits, and whatever modes the umask gave.
-  const withNotes = join(dir, 'data', layout1Name(page));
+  const withNotes = join(dir, 'data', layout1Name('example.com/page')); // 0.1.2's key had no scheme
   const asked = join(dir, 'data', layout1Name('example.org/q'));
   mkdirSync(withNotes, { recursive: true });
   mkdirSync(asked, { recursive: true });
@@ -524,11 +527,13 @@ test('tater moves an older data folder to the current layout', () => {
   assert.deepEqual(folders.filter(f => !/-[0-9a-f]{16}$/.test(f)), [layout1Name('example.org/s')]);
   assert.equal(folders.length, 3);
   const moved = (prefix: string) => join(dir, 'data', folders.find(f => f.startsWith(prefix) && /-[0-9a-f]{16}$/.test(f)) ?? '');
-  assert.deepEqual([moved('example.com'), join(moved('example.com'), 'state.json'), join(moved('example.org-q'), 'inbox.jsonl')].map(mode), ['700', '600', '600']);
+  assert.deepEqual([moved('https-example.com'), join(moved('https-example.com'), 'state.json'), join(moved('https-example.org-q'), 'inbox.jsonl')].map(mode), ['700', '600', '600']);
+  // The message's page is rekeyed with the scheme, so it matches its notes once the agent answers.
+  assert.equal((JSON.parse(readFileSync(join(moved('https-example.org-q'), 'inbox.jsonl'), 'utf8')) as Outgoing).page, 'https://example.org/q');
   assert.match(tater(dir, 'watch', '--all', '--once'), /"id":"q1"/);
   assert.equal(tater(dir, 'reply', 'q1', 'an answer').trim(), 'added note q-q1');
-  assert.deepEqual([mode(dir), mode(join(dir, 'data', folders.find(f => f.startsWith('example.com')) ?? '', 'page.json'))], ['700', '600']);
-  assert.equal(readFileSync(join(dir, 'layout'), 'utf8').trim(), '2');
+  assert.deepEqual([mode(dir), mode(join(dir, 'data', folders.find(f => f.startsWith('https-example.com')) ?? '', 'page.json'))], ['700', '600']);
+  assert.equal(readFileSync(join(dir, 'layout'), 'utf8').trim(), '3');
   // An older helper or tater still running writes under the old name again: the next start moves
   // it in, keeping messages the new folder lacks and the newer notes.
   const stale = join(dir, 'data', layout1Name('example.org/q'));
@@ -549,4 +554,28 @@ test('the launcher names node by an absolute path, never from a relative PATH en
   } finally {
     process.chdir(here);
   }
+});
+
+test('layout 2 folders, keyed without the scheme, move to the scheme-keyed name once', () => {
+  const dir = home();
+  const folder = join(dir, 'data', oldName('example.com/page', 16));
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'page.json'), JSON.stringify(notes));
+  writeFileSync(join(folder, 'inbox.jsonl'), `${JSON.stringify({ id: 'r1', at: '', page: 'example.com/page', url: notes.url, kind: 'reply', noteId: 'n1', text: 'hi' })}\n`);
+  writeFileSync(join(dir, 'layout'), '2\n');
+  assert.match(tater(dir, 'status'), /page: https:\/\/example\.com\/page \(1 notes, 1 waiting/);
+  assert.deepEqual(readdirSync(join(dir, 'data')).map(f => f.replace(/-[0-9a-f]{16}$/, '')), ['https-example.com-page']);
+  assert.match(tater(dir, 'reply', '--note', 'n1', 'hello'), /answered on n1/);
+});
+
+test('an http page and its https twin keep separate notes, and --page without a scheme means https', () => {
+  const dir = home();
+  for (const [scheme, title] of [['https', 'secure'], ['http', 'plain']]) {
+    writeFileSync(join(dir, 'n.json'), JSON.stringify({ ...notes, url: `${scheme}://example.com/page`, title }));
+    tater(dir, 'push', join(dir, 'n.json'));
+  }
+  assert.equal(readdirSync(join(dir, 'data')).length, 2);
+  assert.match(tater(dir, 'status', '--page', 'example.com/page'), /page: https:\/\/example\.com\/page \(1 notes\)/);
+  assert.doesNotMatch(tater(dir, 'status', '--page', 'example.com/page'), /http:\/\//);
+  assert.match(tater(dir, 'status', '--page', 'http://example.com/page'), /page: http:\/\/example\.com\/page/);
 });

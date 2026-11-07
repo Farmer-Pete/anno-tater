@@ -1,7 +1,7 @@
 // The intake page for no-helper mode. `tater open` opens open.html#<notes>; this stores the notes,
 // asks for access to the site if needed (this page's button click is the gesture browsers require),
 // and then moves on to the target page.
-import { decodeFragment, originPattern } from '../shared/notes.ts';
+import { decodeFragment, originPattern, unencrypted } from '../shared/notes.ts';
 import { ext, type Request } from './compat.ts';
 import { saveLocalPage } from './local.ts';
 
@@ -29,9 +29,12 @@ async function main(): Promise<void> {
   const origin = originPattern(target);
   if (!origin || (await ext.permissions.contains({ origins: [origin] }))) { location.replace(target); return; }
 
-  say(`Anno Tater needs access to ${new URL(target).hostname} to show Claude's notes there. You only grant this once per site.`);
+  const host = new URL(target).hostname;
+  const plain = unencrypted(target);
+  say(`Anno Tater needs access to ${host} to show Claude's notes there. You only grant this once per site.${plain
+    ? ` ${host} isn't encrypted (http): anyone on your network could change its pages, and with them read and send messages on its notes as you.` : ''}`);
   actions?.append(
-    button('Allow and continue', true, () => {
+    button(plain ? 'Allow unencrypted site and continue' : 'Allow and continue', !plain, () => {
       void ext.permissions.request({ origins: [origin] }).then(async granted => {
         if (granted) await ext.runtime.sendMessage({ type: 'granted' } satisfies Request);
         location.replace(target);
