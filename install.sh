@@ -81,6 +81,8 @@ if has_profile "Library/Application Support/Google/Chrome" ".config/google-chrom
   rm -rf "$DATA/chrome"
   cp -R "$CHROME_SRC" "$DATA/chrome"
   chmod -R go-rwx "$DATA/chrome"
+  # Mode bits don't cover macOS access-control entries (inherited from a parent folder, say).
+  if [ "$(uname)" = Darwin ]; then chmod -N "$DATA" && chmod -R -N "$DATA/chrome"; fi
   echo "  Chrome only installs extensions from outside its store through Developer mode:"
   echo "    1. Open chrome://extensions and turn on Developer mode (top right)."
   echo "    2. Click Load unpacked and choose: $DATA/chrome"
