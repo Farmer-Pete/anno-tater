@@ -557,6 +557,7 @@ export function createEngine(store: Store, send: (draft: Draft) => Outgoing, sav
   }
 
   function layout(): void {
+    if (!data) arrowSvg.replaceChildren(); // the pins went with the notes; so do their arrows
     if (hidden() || !data) return;
     for (const m of marks) {
       const r = pageRect(m.p.range.getBoundingClientRect());
