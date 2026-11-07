@@ -32,7 +32,8 @@ export const migrateLocal = (): Promise<void> => locked(async () => {
     const now = pageKey(notes.url);
     rekeyed[now] = notes;
     if (now === key) continue;
-    if (stateKey(key) in all) moved[stateKey(now)] = all[stateKey(key)];
+    // State already saved under the current key (after an earlier rekey failed) is newer.
+    if (stateKey(key) in all && !(stateKey(now) in all)) moved[stateKey(now)] = all[stateKey(key)];
     old.push(stateKey(key));
   }
   await ext.storage.local.set({ pages: rekeyed, ...moved, layout: 3 });
