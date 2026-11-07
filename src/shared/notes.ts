@@ -209,6 +209,14 @@ export function originPattern(url: string): string | null {
   }
 }
 
+// The page a stored message belongs to. Older tater stored page keys without the scheme, and
+// before page keys kept #/ routes, without the route: the page it was sent from is the one stored
+// then, with the scheme of its address added, not the key its address has today.
+export function messagePage(m: Pick<Outgoing, 'page' | 'url'>): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(m.page)) return m.page;
+  return `${/^[a-z][a-z0-9+.-]*:/i.exec(m.url)?.[0].toLowerCase() ?? 'https:'}//${m.page}`;
+}
+
 // Whether a site's pages travel unencrypted: http, except on this machine. Anyone on the network
 // can change such a page, and with it act as the person on its notes. Parsed the way the browser
 // reads the address, so the answer matches the origin it grants.
