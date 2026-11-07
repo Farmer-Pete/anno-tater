@@ -9,16 +9,20 @@ export async function localPages(): Promise<Record<string, NotesFile>> {
   return (pages ?? {}) as Record<string, NotesFile>;
 }
 
+// Writes and the rekey below take one lock, which the background and the intake page share (they
+// have the same origin), so neither reads a copy the other is about to replace.
+const locked = <T>(fn: () => Promise<T>): Promise<T> => navigator.locks.request('anno-tater-local', fn);
+
 export async function saveLocalPage(notes: NotesFile): Promise<void> {
   await migrateLocal(); // the intake page can run before the background has
-  await ext.storage.local.set({ pages: { ...(await localPages()), [pageKey(notes.url)]: notes } });
+  await locked(async () => { await ext.storage.local.set({ pages: { ...(await localPages()), [pageKey(notes.url)]: notes } }); });
 }
 
 const stateKey = (page: string) => `state:${page}`;
 
 // Page keys kept the scheme from layout 3 on. Rekeys this browser's copies of notes, and the
 // state of those pages, once.
-export async function migrateLocal(): Promise<void> {
+export const migrateLocal = (): Promise<void> => locked(async () => {
   const { layout = 1 } = await ext.storage.local.get('layout');
   if ((layout as number) >= 3) return;
   const pages = await localPages();
@@ -31,20 +35,16 @@ export async function migrateLocal(): Promise<void> {
     if (stateKey(key) in all) moved[stateKey(now)] = all[stateKey(key)];
     old.push(stateKey(key));
   }
-  // Anything written under a current key meanwhile (the intake page, a page's state) wins.
-  const now = await ext.storage.local.get(null);
-  const fresh = Object.entries((now.pages ?? {}) as Record<string, NotesFile>).filter(([key, notes]) => key === pageKey(notes.url));
-  for (const key of Object.keys(moved)) if (key in now) delete moved[key];
-  await ext.storage.local.set({ pages: { ...rekeyed, ...Object.fromEntries(fresh) }, ...moved, layout: 3 });
+  await ext.storage.local.set({ pages: rekeyed, ...moved, layout: 3 });
   await ext.storage.local.remove(old);
-}
+});
 
 export async function localState(page: string): Promise<PageState> {
   const stored = (await ext.storage.local.get(stateKey(page)))[stateKey(page)] as PageState | undefined;
   return stored ?? { done: {} };
 }
 
-export async function saveLocalState(page: string, patch: Partial<PageState>): Promise<void> {
+export const saveLocalState = (page: string, patch: Partial<PageState>): Promise<void> => locked(async () => {
   const now = await localState(page);
   await ext.storage.local.set({ [stateKey(page)]: mergeState(now, patch) });
-}
+});

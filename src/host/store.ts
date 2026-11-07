@@ -93,9 +93,9 @@ function rekeyInbox(dir: string): void {
   const keep: string[] = [], away = new Map<string, string[]>();
   let changed = false;
   for (const line of readFileSync(file, 'utf8').split('\n').filter(Boolean)) {
-    let m: Outgoing;
-    try { m = JSON.parse(line) as Outgoing; } catch { keep.push(line); continue; }
-    if (typeof m.url !== 'string' || !originPattern(m.url)) { keep.push(line); continue; }
+    let m: Outgoing | null;
+    try { m = JSON.parse(line) as Outgoing | null; } catch { keep.push(line); continue; }
+    if (typeof m?.url !== 'string' || !originPattern(m.url)) { keep.push(line); continue; }
     const page = pageKey(m.url);
     const fixed = m.page === page ? line : JSON.stringify({ ...m, page });
     if (fixed !== line) changed = true;
