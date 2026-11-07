@@ -579,3 +579,40 @@ test('an http page and its https twin keep separate notes, and --page without a 
   assert.doesNotMatch(tater(dir, 'status', '--page', 'example.com/page'), /http:\/\//);
   assert.match(tater(dir, 'status', '--page', 'http://example.com/page'), /page: http:\/\/example\.com\/page/);
 });
+
+// A reply as tater 0.1.2 stored it: the page key had no scheme.
+const oldReply = (id: string, scheme: string) => JSON.stringify({ id, at: '', page: 'example.com/page', url: `${scheme}://example.com/page`, kind: 'reply', noteId: 'n1', text: id });
+
+test('migration splits an inbox an http page and its https twin shared, keeps lines it can\'t read, and catches late old folders', () => {
+  const dir = home();
+  const shared = join(dir, 'data', oldName('example.com/page', 8));
+  mkdirSync(shared, { recursive: true });
+  writeFileSync(join(shared, 'page.json'), JSON.stringify(notes));
+  writeFileSync(join(shared, 'inbox.jsonl'), `${oldReply('s1', 'https')}\n${oldReply('p1', 'http')}\n{"id":"broken\n${oldReply('s2', 'https')}\n`);
+  // Push runs the migration and doesn't read inboxes (readers still stop at a broken line).
+  writeFileSync(join(dir, 'n.json'), JSON.stringify(notes));
+  tater(dir, 'push', join(dir, 'n.json'));
+  assert.equal(readFileSync(join(dir, 'layout'), 'utf8').trim(), '3'); // the broken line didn't stop it
+  const inbox = (prefix: string) => readFileSync(join(dir, 'data', readdirSync(join(dir, 'data')).find(f => f.startsWith(prefix)) ?? '', 'inbox.jsonl'), 'utf8');
+  assert.deepEqual(inbox('https-').split('\n').filter(Boolean).map(l => { try { return (JSON.parse(l) as Outgoing).id; } catch { return l; } }), ['s1', '{"id":"broken', 's2']);
+  assert.deepEqual(inbox('http-').split('\n').filter(Boolean).map(l => [(JSON.parse(l) as Outgoing).id, (JSON.parse(l) as Outgoing).page]), [['p1', 'http://example.com/page']]);
+  // Code that wrote layout 2 (no scheme, 16 hex digits) still running after layout 3 was recorded.
+  // (status reads every inbox, so the broken line goes first.)
+  const httpsInbox = join(dir, 'data', readdirSync(join(dir, 'data')).find(f => f.startsWith('https-')) ?? '', 'inbox.jsonl');
+  writeFileSync(httpsInbox, readFileSync(httpsInbox, 'utf8').split('\n').filter(l => !l.includes('broken')).join('\n'));
+  const late = join(dir, 'data', oldName('example.org/late', 16));
+  mkdirSync(late);
+  writeFileSync(join(late, 'page.json'), JSON.stringify({ ...notes, url: 'https://example.org/late' }));
+  assert.match(tater(dir, 'status', '--page', 'https://example.org/late'), /\(1 notes\)/);
+  assert.ok(!existsSync(late));
+});
+
+test('an answer starts its notes at the address of the message, even when older code wrote its page', () => {
+  const dir = home();
+  const folder = join(dir, 'data', `https-example.org-z-${'0'.repeat(16)}`);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'inbox.jsonl'), `${JSON.stringify({ id: 'z1', at: '', page: 'example.org/z', url: 'https://example.org/z', kind: 'ask', noteId: null, quote: 'q', text: 'what?' })}\n`);
+  writeFileSync(join(dir, 'layout'), '3\n'); // already migrated, so nothing rekeys the message first
+  assert.match(tater(dir, 'reply', 'z1', 'this'), /added note q-z1/);
+  assert.match(tater(dir, 'status', '--page', 'https://example.org/z'), /page: https:\/\/example\.org\/z \(1 notes\)/);
+});

@@ -50,9 +50,10 @@ function writeAtomic(path: string, text: string): void {
 // 2: page folders end in 16 hex digits (they had 8), and everything is private to the person.
 // 3: the page key keeps the scheme, so folder names and the page of each inbox message change.
 const LAYOUT = 3;
-// A folder name tater 0.1.2 and older wrote: 8 hex digits. Older code still running after an
-// upgrade (a helper in an open browser, tater in another session) can write one at any time.
-const legacy = (name: string) => /-[0-9a-f]{8}$/.test(name);
+// A folder name older code wrote: 8 hex digits (tater 0.1.2), or no scheme in front. Older code
+// still running after an upgrade (a helper in an open browser, tater in another session) can
+// write one at any time.
+const legacy = (name: string) => /-[0-9a-f]{8}$/.test(name) || !/^https?-/.test(name);
 
 const isMissing = (e: unknown) => (e as NodeJS.ErrnoException).code === 'ENOENT';
 
@@ -83,18 +84,30 @@ function mergeInto(from: string, to: string): void {
   rmSync(from, { recursive: true, force: true });
 }
 
-// Gives every message in a folder's inbox the page key its address has now.
+// Gives every message in a folder's inbox the page key its address has now, and moves a message
+// whose key belongs to another folder there: an http page and its https twin shared one inbox
+// before the key kept the scheme. A line that isn't JSON stays as it is.
 function rekeyInbox(dir: string): void {
   const file = join(dir, 'inbox.jsonl');
   if (!existsSync(file)) return;
+  const keep: string[] = [], away = new Map<string, string[]>();
   let changed = false;
-  const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => {
-    const m = JSON.parse(line) as Outgoing;
-    if (typeof m.url !== 'string' || m.page === pageKey(m.url)) return line;
-    changed = true;
-    return JSON.stringify({ ...m, page: pageKey(m.url) });
-  });
-  if (changed) writeAtomic(file, `${lines.join('\n')}\n`);
+  for (const line of readFileSync(file, 'utf8').split('\n').filter(Boolean)) {
+    let m: Outgoing;
+    try { m = JSON.parse(line) as Outgoing; } catch { keep.push(line); continue; }
+    if (typeof m.url !== 'string' || !originPattern(m.url)) { keep.push(line); continue; }
+    const page = pageKey(m.url);
+    const fixed = m.page === page ? line : JSON.stringify({ ...m, page });
+    if (fixed !== line) changed = true;
+    if (pageDir(page) === dir) keep.push(fixed); else { away.set(page, [...(away.get(page) ?? []), fixed]); changed = true; }
+  }
+  for (const [page, lines] of away) {
+    makeDir(pageDir(page));
+    const have = new Set(existsSync(inboxFile(page)) ? readFileSync(inboxFile(page), 'utf8').split('\n') : []);
+    const add = lines.filter(l => !have.has(l));
+    if (add.length) appendFileSync(inboxFile(page), `${add.join('\n')}\n`, { mode: PRIVATE_FILE });
+  }
+  if (changed) writeAtomic(file, keep.length ? `${keep.join('\n')}\n` : '');
 }
 
 // Makes a folder and its files private. Returns false when that fails for a reason other than

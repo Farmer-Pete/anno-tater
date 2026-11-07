@@ -90,10 +90,15 @@ const activated = new Map<number, string>(); // tabs where the person asked to t
 const focusing = new Map<number, { page: string; note: string }>(); // tabs opened from a link, and the note to show
 const broadcast = (m: ToPage) => { for (const port of pages.keys()) port.postMessage(m); };
 
+// This browser's own copies move to the current page keys once; pages wait for that before
+// reading them. A failure is reported and leaves the copies as they were.
+const localReady = migrateLocal().catch((e: unknown) => { console.warn('Anno Tater: could not update stored notes:', e); });
+
 // The page's notes, state, and waiting messages: from the helper when it runs, else from this browser.
 async function refresh(port: Port): Promise<void> {
   const info = pages.get(port);
   if (!info) return;
+  await localReady;
   const { page, url } = info; // a single-page app can move on while we wait
   info.rev = revOf(page);
   const fromHelper = helper ? await askHelper(page) : null;
@@ -232,4 +237,4 @@ ext.storage.onChanged.addListener((changes, area) => { if (area === 'local' && c
 // The helper stays connected while the browser runs, so notes pushed for a new site raise the badge
 // even when no page is open. In Chrome an open native port also keeps this worker awake.
 connectHelper();
-void migrateLocal().then(syncContentScripts).then(updateBadge);
+void localReady.then(syncContentScripts).then(updateBadge);

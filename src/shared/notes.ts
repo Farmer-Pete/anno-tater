@@ -210,8 +210,16 @@ export function originPattern(url: string): string | null {
 }
 
 // Whether a site's pages travel unencrypted: http, except on this machine. Anyone on the network
-// can change such a page, and with it act as the person on its notes.
-export const unencrypted = (url: string) => /^http:\/\//i.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?\//i.test(url);
+// can change such a page, and with it act as the person on its notes. Parsed the way the browser
+// reads the address, so the answer matches the origin it grants.
+export function unencrypted(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  } catch {
+    return false;
+  }
+}
 
 // ---------- text anchoring (the DOM-free half) ----------
 

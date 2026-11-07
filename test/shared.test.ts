@@ -56,7 +56,9 @@ test('a page key keeps a fragment route, minus any anchor after it', () => {
 test('http counts as unencrypted, except on this machine', () => {
   assert.equal(unencrypted('http://example.com/*'), true);
   assert.equal(unencrypted('https://example.com/*'), false);
-  assert.deepEqual(['http://localhost:3000/x', 'http://127.0.0.1/*', 'http://[::1]/'].map(unencrypted), [false, false, false]);
+  assert.deepEqual(['http://localhost:3000/x', 'http://localhost:3000', 'http://127.0.0.1/*', 'http://[::1]/'].map(unencrypted), [false, false, false, false]);
+  // Read the way the browser reads it: these are all http://evil.com.
+  assert.deepEqual(['http:evil.com/', 'http:/evil.com/', 'HTTP://evil.com'].map(unencrypted), [true, true, true]);
 });
 
 test('originPattern covers http and https only', () => {

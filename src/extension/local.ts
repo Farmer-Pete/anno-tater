@@ -10,6 +10,7 @@ export async function localPages(): Promise<Record<string, NotesFile>> {
 }
 
 export async function saveLocalPage(notes: NotesFile): Promise<void> {
+  await migrateLocal(); // the intake page can run before the background has
   await ext.storage.local.set({ pages: { ...(await localPages()), [pageKey(notes.url)]: notes } });
 }
 
@@ -30,7 +31,11 @@ export async function migrateLocal(): Promise<void> {
     if (stateKey(key) in all) moved[stateKey(now)] = all[stateKey(key)];
     old.push(stateKey(key));
   }
-  await ext.storage.local.set({ pages: rekeyed, ...moved, layout: 3 });
+  // Anything written under a current key meanwhile (the intake page, a page's state) wins.
+  const now = await ext.storage.local.get(null);
+  const fresh = Object.entries((now.pages ?? {}) as Record<string, NotesFile>).filter(([key, notes]) => key === pageKey(notes.url));
+  for (const key of Object.keys(moved)) if (key in now) delete moved[key];
+  await ext.storage.local.set({ pages: { ...rekeyed, ...Object.fromEntries(fresh) }, ...moved, layout: 3 });
   await ext.storage.local.remove(old);
 }
 

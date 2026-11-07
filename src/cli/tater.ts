@@ -63,9 +63,10 @@ const findMessage = (id: string) => readAllInboxes().find(m => m.id === id) ?? f
 const session = process.env.CLAUDE_CODE_SESSION_ID || undefined;
 const short = (id: string) => id.slice(0, 8);
 
-// The page's notes. A question asked on a page without notes starts a notes file there, at the
-// page key: the address without the #fragment, which the page's link could fill with text of its own.
-const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: m.page, notes: [], session };
+// The page's notes. A question asked on a page without notes starts a notes file there, at its
+// page key: the address without the #fragment (a #/route stays), which the page's link could fill
+// with text of its own. The key comes from the address, in case older code wrote the message.
+const pageFor = (m: Outgoing): NotesFile => findPage(pageKey(m.url)) ?? { url: pageKey(m.url), notes: [], session };
 
 // Saves a page's notes, or stops with the reason they can't be saved (too big for the browser).
 const save = (notes: NotesFile) => { try { return savePage(notes); } catch (e) { return fail((e as Error).message); } };
