@@ -331,6 +331,15 @@ test('a link in a note shows its host beside its text and sends no referrer', as
   assert.equal((await shadow(page, '.card .host').innerText()).trim(), '(evil.example)');
 });
 
+test('a step\'s arrow goes away with the notes', async () => {
+  const page = await open(PROSE, { notes: [{ id: 's', kind: 'step', step: 1, quote: 'Lock out the breaker.' }] });
+  const arrows = () => shadow(page, 'svg.arrows path').count();
+  assert.equal(await arrows(), 1);
+  await page.evaluate(() => (window as unknown as { tater: { engine: { load(n: unknown, l: unknown): void } } }).tater.engine.load(null, { twoWay: true, state: { done: {} }, pending: [] }));
+  await page.waitForTimeout(100);
+  assert.equal(await arrows(), 0);
+});
+
 test('a tall card stays on screen: it caps its height to the room it has and scrolls', async () => {
   const filler = Array.from({ length: 12 }, (_, i) => `<p>Log entry ${i}: levels normal.</p>`).join('');
   const body = Array.from({ length: 30 }, (_, i) => `Paragraph ${i} of a long explanation.`).join('\n\n');
