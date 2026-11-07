@@ -3,11 +3,14 @@
 # extension for Chrome, Zen, and Firefox Developer Edition.
 #
 # From a clone:  ./install.sh                 (builds first; needs Node 26 and npm)
-# Without one:   curl -fsSL https://raw.githubusercontent.com/Farmer-Pete/anno-tater/main/install.sh | sh
-#                (downloads the latest release; needs Node 20+)
+# Without one:   curl -fsSL https://github.com/Farmer-Pete/anno-tater/releases/latest/download/install.sh | sh
+#                (downloads that release; needs Node 20+)
 set -eu
 
 REPO=Farmer-Pete/anno-tater
+# The release to download. A release's own copy of this script names its version here, so it
+# installs the files it was published with.
+TAG=latest
 DATA=${ANNO_TATER_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/anno-tater}
 SKILL_DIR=${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}/tater
 
@@ -27,14 +30,31 @@ if [ -f package.json ] && grep -q '"name": "anno-tater"' package.json; then
   CHROME_SRC=$SRC/dist/chrome
   XPI=$SRC/dist/anno-tater.xpi
 else
-  say "Downloading the latest release"
+  say "Downloading release $TAG"
   SRC=$(mktemp -d)
   trap 'rm -rf "$SRC"' EXIT
-  base=https://github.com/$REPO/releases/latest/download
-  curl -fsSL "$base/anno-tater-skill.tar.gz" | tar -xz -C "$SRC"
-  curl -fsSL -o "$SRC/chrome.zip" "$base/anno-tater-chrome.zip"
-  mkdir -p "$SRC/chrome" && (cd "$SRC/chrome" && unzip -q ../chrome.zip)
-  curl -fsSL -o "$SRC/anno-tater.xpi" "$base/anno-tater.xpi"
+  if [ "$TAG" = latest ]; then base=https://github.com/$REPO/releases/latest/download; else base=https://github.com/$REPO/releases/download/$TAG; fi
+  base=${ANNO_TATER_RELEASE_URL:-$base} # for testing against a copy of a release
+  FILES="anno-tater-skill.tar.gz anno-tater-chrome.zip anno-tater.xpi"
+  for f in SHA256SUMS $FILES; do curl -fsSL -o "$SRC/$f" "$base/$f" || die "couldn't download $f from $base"; done
+  # SHA256SUMS comes from the same release page as the files, so on its own it can't catch a
+  # swapped release. With the GitHub CLI logged in, check that this repo's Release workflow built
+  # it; the checksums below then vouch for every other file.
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh attestation verify "$SRC/SHA256SUMS" --repo "$REPO" >/dev/null 2>&1 || die "SHA256SUMS has no valid attestation from $REPO; nothing was installed"
+    echo "  Checked: $REPO's Release workflow built these files."
+  else
+    echo "  Log in to the GitHub CLI (gh auth login) to also check where these files were built."
+  fi
+  # Every file must match the release's SHA256SUMS before anything is unpacked or run.
+  sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum -c -; else shasum -a 256 -c -; fi; }
+  for f in $FILES; do
+    sum=$(grep -E "^[0-9a-f]{64}  $f\$" "$SRC/SHA256SUMS" || true)
+    [ -n "$sum" ] || die "SHA256SUMS doesn't list $f; nothing was installed"
+    (cd "$SRC" && printf '%s\n' "$sum" | sha256 >/dev/null 2>&1) || die "$f doesn't match the release's SHA256SUMS; nothing was installed"
+  done
+  tar -xzf "$SRC/anno-tater-skill.tar.gz" -C "$SRC"
+  mkdir -p "$SRC/chrome" && (cd "$SRC/chrome" && unzip -q ../anno-tater-chrome.zip)
   SKILL_SRC=$SRC/skill
   CHROME_SRC=$SRC/chrome
   XPI=$SRC/anno-tater.xpi
