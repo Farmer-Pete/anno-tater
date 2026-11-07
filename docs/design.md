@@ -61,7 +61,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 }
 ```
 
-- `url` is the page. Its address without the scheme or `#fragment` is the page key. A fragment route (`#/settings`, `#!/settings`) stays in the key.
+- `url` is the page. Its address without the `#fragment` is the page key. The scheme stays, so an http page never shares notes with its https twin. A fragment route (`#/settings`, `#!/settings`) stays in the key.
 - `kind` is one of `issue`, `caution`, `agree`, `info`, `step`. Steps also have `step: <number>`.
 - `decorate` is one of `box`, `circle`, `underline`, `bracket`.
 - After each draw the page saves a placement report in its state (placed count, unplaced and ambiguous notes, and a hash of the anchors it drew from), which `tater status --page` prints for the agent.
@@ -75,7 +75,7 @@ Chrome: the manifest's `key` fixes the extension ID, so the intake URL is known 
 
 ## Pages are the key
 
-A page's address, without the scheme or the `#fragment`, keys everything:
+A page's address, without the `#fragment`, keys everything:
 
 | File | What | Shared by |
 | --- | --- | --- |

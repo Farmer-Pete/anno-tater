@@ -26,7 +26,7 @@ Releasing publishes outside this machine: confirm with the person first.
 
 ## How it fits together
 
-- A page's URL without scheme or fragment is the key (a `#/` or `#!/` route stays): `~/.local/share/anno-tater/data/<page>/` holds the page's `page.json` (notes), `state.json`, and `inbox.jsonl`, shared by every browser.
+- A page's URL without its fragment is the key (the scheme stays, and so does a `#/` or `#!/` route): `~/.local/share/anno-tater/data/<page>/` holds the page's `page.json` (notes), `state.json`, and `inbox.jsonl`, shared by every browser. The folders are private (`0700`, files `0600`), and `migrate()` in `src/host/store.ts` moves an older layout forward when the helper starts and before `tater` commands that read or write page data.
 - Extensions can't read files. The helper (started by the browser over stdio) reads and writes the data folder and talks to the background. Without the helper, `tater open` carries notes to the extension's `open.html` in the URL fragment: one-way only.
 - The extension runs only on sites the person allowed (`optional_host_permissions`, one Allow click per site); the background registers the content script for those origins.
 - Text highlights use the CSS Custom Highlight API, so pages that re-render can't erase them. Everything else lives in one shadow root.

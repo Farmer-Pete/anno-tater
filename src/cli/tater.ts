@@ -63,9 +63,10 @@ const findMessage = (id: string) => readAllInboxes().find(m => m.id === id) ?? f
 const session = process.env.CLAUDE_CODE_SESSION_ID || undefined;
 const short = (id: string) => id.slice(0, 8);
 
-// The page's notes. A question asked on a page without notes starts a notes file there, at the
-// page's address without the #fragment, which the page's link could fill with text of its own.
-const pageFor = (m: Outgoing): NotesFile => findPage(m.page) ?? { url: `${/^[a-z]+:\/\//i.exec(m.url)?.[0] ?? 'https://'}${m.page}`, notes: [], session };
+// The page's notes. A question asked on a page without notes starts a notes file there, at its
+// page key: the address without the #fragment (a #/route stays), which the page's link could fill
+// with text of its own. The key comes from the address, in case older code wrote the message.
+const pageFor = (m: Outgoing): NotesFile => findPage(pageKey(m.url)) ?? { url: pageKey(m.url), notes: [], session };
 
 // Saves a page's notes, or stops with the reason they can't be saved (too big for the browser).
 const save = (notes: NotesFile) => { try { return savePage(notes); } catch (e) { return fail((e as Error).message); } };
@@ -232,7 +233,8 @@ const { values, positionals } = parseArgs({
 const [command, ...args] = positionals;
 // Commands that read or write page data bring the data folder up to date first.
 if (['push', 'open', 'watch', 'reply', 'ack', 'mark', 'export', 'status'].includes(command ?? '') && !values.help) migrate();
-const pages = [...new Set((values.page ?? []).map(pageKey))];
+// --page takes an address; one without a scheme is taken as https.
+const pages = [...new Set((values.page ?? []).map(u => pageKey(/^[a-z][a-z0-9+.-]*:\/\//i.test(u) ? u : `https://${u}`)))];
 
 switch (values.help ? 'help' : command) {
   case 'push':

@@ -186,15 +186,17 @@ export const isPageNote = (n: Note) => n.quote === undefined && n.anchor === und
 
 // ---------- pages ----------
 
-// The key for a page: its address without the scheme or the #fragment. The query string stays,
-// since it can change what a page shows (GitHub's ?plain=1). A fragment route stays too
-// (#/settings, #!/settings): single-page apps use it to pick the page. A bare #/ is the root.
+// The key for a page: its address without the #fragment. The scheme stays, so an http page and
+// its https twin never share notes: whoever can change the http one in transit would reach the
+// https one's conversation. The query string stays, since it can change what a page shows
+// (GitHub's ?plain=1). A fragment route stays too (#/settings, #!/settings): single-page apps use
+// it to pick the page. A bare #/ is the root.
 export function pageKey(url: string): string {
-  const bare = url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
-  const at = bare.indexOf('#');
-  if (at === -1) return bare;
-  const route = /^#(!?\/[^#]*)/.exec(bare.slice(at))?.[1];
-  return bare.slice(0, at) + (route && route !== '/' && route !== '!/' ? `#${route}` : '');
+  const full = url.replace(/^[a-z][a-z0-9+.-]*:/i, s => s.toLowerCase());
+  const at = full.indexOf('#');
+  if (at === -1) return full;
+  const route = /^#(!?\/[^#]*)/.exec(full.slice(at))?.[1];
+  return full.slice(0, at) + (route && route !== '/' && route !== '!/' ? `#${route}` : '');
 }
 
 // The origin pattern a browser permission needs for a URL, e.g. "https://github.com/*".
@@ -204,6 +206,18 @@ export function originPattern(url: string): string | null {
     return u.protocol === 'http:' || u.protocol === 'https:' ? `${u.protocol}//${u.hostname}/*` : null;
   } catch {
     return null;
+  }
+}
+
+// Whether a site's pages travel unencrypted: http, except on this machine. Anyone on the network
+// can change such a page, and with it act as the person on its notes. Parsed the way the browser
+// reads the address, so the answer matches the origin it grants.
+export function unencrypted(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  } catch {
+    return false;
   }
 }
 
